@@ -206,6 +206,8 @@ def draw_transfer(book, axes, axes2, limit=0, low_lim=0, label_font_s=14):
    
 #%%
 def find_on_index(data: pd.DataFrame) -> int:
+    data = sort_transfer_curve(data)
+    
     avg_kernel = [0.1, 0.2, 0.4, 0.2, 0.1]
     avg_k_os =int((len(avg_kernel) - 1) / 2 ) # overshoot of the averaging kernel
     sl_kernel = [0.125, 0.25, 0, -0.25, -0.125]
@@ -252,6 +254,8 @@ def find_on_index(data: pd.DataFrame) -> int:
     return on_index
 
 def find_fitting_boundaries(data: pd.DataFrame) -> tuple[int, int]:
+    data = sort_transfer_curve(data)
+    
     fit_from: int
     fit_to: int
     
@@ -374,9 +378,10 @@ def draw_analyzed_graph(
     axes2: pl.Axes,
     mob: float,
     params: tuple[float, float, float, float, float, float],
-    fontsize: int = 8
+    fontsize: int = 8,
+    label_font_s: int = 14
 ) -> None:
-    draw_transfer(book, axes, axes2)
+    draw_transfer(book, axes, axes2, label_font_s=label_font_s)
     # calculate things to draw
     x_min = book[book.columns[0]].min()
     x_max = book[book.columns[0]].max()
@@ -520,7 +525,7 @@ def draw_graphs(data_all, namelist, path):
         pl.show()
     return
 
-def extract_data(filename):
+def extract_data_from_file(filename):
     if filename[-len(outend):] == outend or filename[-len(trend):] == trend:
         data = read_simple_file(filename)
         # COMMENT OUT THE FOLLOWING LINES IF YOU WANT TO WORK WITH THE
@@ -555,7 +560,7 @@ def process_directory(path):
     for filename in filelist:
         print(f"  > {filename}")
         #data = pd.read_csv(filename, header=2)        
-        conv_data = extract_data(filename)
+        conv_data = extract_data_from_file(filename)
         ind = 0
         fn_end = ["", " rev"]
         for data in conv_data:
