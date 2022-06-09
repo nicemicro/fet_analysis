@@ -13,7 +13,7 @@ import glob
 import re
 import pylab as pl
 from scipy import signal
-from typing import Literal
+from typing import Literal, Union
 
 def file_convert(filename, header=2):
     data = pd.read_csv(filename, delimiter=",",
@@ -437,21 +437,23 @@ def mobility_calc(mob_slope: float, ci: float, w: float, l: float) -> float:
     return mob_slope ** 2 * mob_multip
 
 def create_record(
-    name: str,
+    name: Union[str, dict[str, str]],
     mob: float,
     params: tuple[float, float, float, float, float, float]
 ) -> pd.DataFrame:
     _, v_th, v_turnon, ss, i_off, i_on = params
     onoff = i_on / i_off
-    new_record = pd.DataFrame(
-        [[
-            name,
-            mob,
-            v_th,
-            v_turnon,
-            ss, onoff
-        ]],
-        columns=["Name", "Mobility", "VTh", "VOn", "S.S", "IOn/IOff"])
+    data_list: list[Union[str, float]] = []
+    column_list: list[str] = []
+    if isinstance(name, str):
+        data_list = [name]
+        column_list = ["Name"]
+    elif isinstance(name, dict):
+        data_list = list(name.values())
+        column_list = list(name.keys())
+    data_list += [mob, v_th, v_turnon, ss, onoff]
+    column_list += ["Mobility", "VTh", "VOn", "S.S", "IOn/IOff"]
+    new_record = pd.DataFrame([data_list], columns=column_list)
     return new_record
 
 def evaluate(data_all, namelist: list[str], path: str):

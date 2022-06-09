@@ -62,9 +62,8 @@ class FileListWindow(ttk.Frame):
         main_frame.columnconfigure(0, weight=10)
         main_frame.columnconfigure(1, weight=0)
         main_frame.rowconfigure(0, weight=10)
-        main_frame.rowconfigure(1, weight=0)
-        main_frame.rowconfigure(2, weight=0)
-        main_frame.rowconfigure(3, weight=0)
+        for rownum in [1, 2, 3, 4]:
+            main_frame.rowconfigure(rownum, weight=0)
 
         self.filelist_view = ttk.Treeview(
             main_frame,
@@ -96,6 +95,9 @@ class FileListWindow(ttk.Frame):
         ttk.Button(
             main_frame, text="Cache all", command=self.cache_all
         ).grid(row=3, column=0, columnspan=2, sticky="nsew")
+        ttk.Button(
+            main_frame, text="Export cached data", command=self.export_cached
+        ).grid(row=4, column=0, columnspan=2, sticky="nsew")
 
         self.filelist += glob.glob(self.path + SEP + "*.csv")
         self.filelist += glob.glob(self.path + SEP + "*.xls")
@@ -115,6 +117,24 @@ class FileListWindow(ttk.Frame):
                 text=filename,
                 values=(self.namelist[index],"")
             )
+
+    def export_cached(self) -> None:
+        result_list: list[pd.DataFrame] = []
+        file_res_indeces = list(self.anal_res.keys())
+        file_res_indeces.sort()
+        for file_index in file_res_indeces:
+            sub_indeces = list(self.anal_res[file_index].keys())
+            sub_indeces.sort()
+            for sub_index in sub_indeces:
+                column_indeces = list(self.anal_res[file_index][sub_index].keys())
+                column_indeces.sort()
+                for column_index in column_indeces:
+                    result_list.append(self.anal_res[file_index][sub_index][column_index])
+        if len(result_list) == 0:
+            return
+        result = pd.concat(result_list)
+        result = result.reset_index(drop=True)
+        result.to_csv(f"{self.path}{SEP}result.csv", index=False)
 
     def delete_selected(self) -> None:
         sel_num, subsel, colnum = self.get_selection_nums()
@@ -160,17 +180,18 @@ class FileListWindow(ttk.Frame):
 
     def _cache_transfer_curve(self, index: int, subindex: int, col_ind: int) -> None:
         turn_on, fit_left, fit_right = self._analyze_transfer_curve(index, subindex, col_ind)
+        if col_ind in self.anal_res[index][subindex]:
+            return
         self.anal_param[index][subindex][col_ind] = AnalParams(turn_on, fit_left, fit_right)
         table = self.all_data[index][subindex]
         data: pd.DataFrame = table[[table.columns[0], table.columns[col_ind]]]
-        name = self.namelist[index]
         result = fet.param_eval(
             data,
             on_index=turn_on,
             fitting_boundaries=(fit_left, fit_right)
         )
         mob = fet.mobility_calc(result[0], ci, w, l)
-        self.anal_res[index][subindex][col_ind] = fet.create_record(name, mob, result)
+        self._save_analysis_results(index, subindex, col_ind, mob, result)
 
     def cache_all(self) -> None:
         for index, filename in enumerate(self.filelist):
@@ -180,6 +201,8 @@ class FileListWindow(ttk.Frame):
                 data_storage = self._get_file_data(index)
             else:
                 data_storage = self.all_data[index]
+            if len(data_storage) == 0:
+                continue
             assert fet.data_type(data_storage[0]) != ""
             if (fet.data_type(data_storage[0]) == "tr"):
                 for subindex, _ in enumerate(data_storage):
@@ -205,7 +228,8 @@ class FileListWindow(ttk.Frame):
                 values=(self.namelist[file_ind], "✓")
             )
             new_data = True
-
+        if len(data_storage) == 0:
+            return data_storage
         if fet.data_type(data_storage[0]) == "out":
             if new_data and len(data_storage) > 1:
                 for index, _ in enumerate(data_storage):
@@ -213,7 +237,7 @@ class FileListWindow(ttk.Frame):
                         f"{file_ind}",
                         "end",
                         iid=f"{file_ind}-{index}",
-                        text=f"Sub-{index+1}",
+                        text=f"Sweep-{index+1}",
                         values=(f"{self.name[file_ind]}-{index+1}","")
                     )
                 self.filelist_view.see(f"{file_ind}-0")
@@ -224,7 +248,7 @@ class FileListWindow(ttk.Frame):
                         f"{file_ind}",
                         "end",
                         iid=f"{file_ind}-{index}",
-                        text=f"Sub-{index+1}",
+                        text=f"Sweep-{index+1}",
                         values=(f"{self.namelist[file_ind]}-{index+1}","")
                     )
                     for i2, colname in enumerate(sub_data.columns):
@@ -299,16 +323,30 @@ class FileListWindow(ttk.Frame):
         fit_right = self.anal_param[index][sub_ind][col_ind].fit_right
         return turn_on, fit_left, fit_right
 
-    def save_analysis_results(
+    def save_selected_results(
         self,
         mob: float,
         result: tuple[float, float, float, float, float, float]
     ) -> None:
-        name = self.get_selected_filename()
         sel, subsel, col_ind = self.get_selection_nums()
-        self.anal_res[sel][subsel][col_ind] = fet.create_record(name, mob, result)
+        self._save_analysis_results(sel, subsel, col_ind, mob, result)
+
+    def _save_analysis_results(
+        self,
+        index: int,
+        subindex: int,
+        col_ind: int,
+        mob: float,
+        result: tuple[float, float, float, float, float, float]
+    ) -> None:
+        desc: dict[str, str] = {"Name": self.namelist[index]}
+        if len(self.all_data[index]) > 1:
+            desc["Sweep"] = f"{subindex}"
+        if len(self.all_data[index][subindex].columns) > 2:
+            desc["VDS"] = self.all_data[index][subindex].columns[col_ind].replace("VDS = ", "")
+        self.anal_res[index][subindex][col_ind] = fet.create_record(desc, mob, result)
         self.filelist_view.item(
-            f"{sel}-{subsel}-{col_ind}",
+            f"{index}-{subindex}-{col_ind}",
             values=("","✓")
         )
 
@@ -461,7 +499,7 @@ class AppContainer(tk.Tk):
             fitting_boundaries=(fit_left, fit_right)
         )
         mob = fet.mobility_calc(result[0], ci, w, l)
-        filelist_view.save_analysis_results(mob, result)
+        filelist_view.save_selected_results(mob, result)
         fet.draw_analyzed_graph(
             data,
             axes,
