@@ -13,6 +13,7 @@ import glob
 import re
 import pylab as pl
 from scipy import signal
+from typing import Literal
 
 def file_convert(filename, header=2):
     data = pd.read_csv(filename, delimiter=",",
@@ -203,7 +204,14 @@ def draw_transfer(book, axes, axes2, limit=0, low_lim=0, label_font_s=14):
     axes.set_yscale("log")
     axes.set_ylim(low_lim, limit)
     axes2.set_ylim(0, np.sqrt(limit / 5))
-   
+
+def data_type(book: pd.DataFrame) -> Literal["", "out", "tr"]:
+    if book.columns[0] == "VDS":
+        return "out"
+    if book.columns[0] == "VGS":
+        return "tr"
+    return ""
+
 #%%
 def find_on_index(data: pd.DataFrame) -> int:
     data = sort_transfer_curve(data)

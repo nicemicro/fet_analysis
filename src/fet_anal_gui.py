@@ -8,17 +8,27 @@ Created on Fri Jun  3 13:07:03 2022
 Licenced under the GPL v3.0
 """
 
-import pandas as pd
-from math import sqrt
 import glob
 import tkinter as tk
+from math import sqrt
 from tkinter import ttk
+from typing import Optional, Literal
+
+import pandas as pd
 import pylab as pl
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
                                                NavigationToolbar2Tk)
+
 import fet_func as fet
 
 SEP = "/"
+# IMPORTANT CONSTANTS
+#TODO: constants should be changed in the UI
+ci = 3.45E-4 # F/m^2 (areal capacitance) SiO2 100 nm
+#ci = 1.18E-3 # F/m^2 (areal capacitance) Al2O3 50 nm
+#ci = 5.78E-5 # pF/mm^2 crosslinked PVP solution processed
+w = 2000 # micrometers (channel length)
+l = 200 # micrometers (channel width)
 
 class AnalParams():
     def __init__(self, turn_on: int, fit_left: int, fit_right: int) -> None:
@@ -27,12 +37,19 @@ class AnalParams():
         self.fit_right: int = fit_right
 
 class FileListWindow(ttk.Frame):
-    def __init__(self, path: str, name: str, master: ttk.Notebook, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        path: str,
+        name: str,
+        master: ttk.Notebook,
+        *args, **kwargs
+    ) -> None:
         ttk.Frame.__init__(self, *args, **kwargs)
 
         self.path: str = path
         self.name: str = name
-        self.filelist: list[str] = []
+        self.filelist: list[Optional[str]] = []
+        self.namelist: dict[int, str] = {}
         self.all_data: dict[int, list[pd.DataFrame]] = {}
         self.anal_param: dict[int, dict[int, dict[int, AnalParams]]] = {}
         self.anal_res: dict[int, dict[int, dict[int, pd.Series]]] = {}
@@ -45,36 +62,93 @@ class FileListWindow(ttk.Frame):
         main_frame.columnconfigure(0, weight=10)
         main_frame.columnconfigure(1, weight=0)
         main_frame.rowconfigure(0, weight=10)
+        main_frame.rowconfigure(1, weight=0)
+        main_frame.rowconfigure(2, weight=0)
+        main_frame.rowconfigure(3, weight=0)
 
-        self.filelist_view = ttk.Treeview(main_frame, selectmode="browse")
-        self.filelist_view.heading('#0', text='Filename')
+        self.filelist_view = ttk.Treeview(
+            main_frame,
+            selectmode="browse",
+            columns=("name", "load")
+        )
+        self.filelist_view.heading("#0", text="Filename")
+        self.filelist_view.column("load", minwidth=20, width=30, stretch=tk.NO)
+        self.filelist_view.heading("name", text="Name")
+        self.filelist_view.heading("load", text="Load")
         scrollbar = ttk.Scrollbar(
             main_frame,
             orient="vertical",
             command=self.filelist_view.yview
         )
+        hscrollbar = ttk.Scrollbar(
+            main_frame,
+            orient="horizontal",
+            command=self.filelist_view.xview
+        )
         self.filelist_view.configure(yscrollcommand=scrollbar.set)
+        self.filelist_view.configure(xscrollcommand=hscrollbar.set)
         self.filelist_view.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="nsw")
-        self.filelist = (
-            glob.glob(self.path + SEP + "*.csv") +
-            glob.glob(self.path + SEP + "*.xls")
-        )
+        hscrollbar.grid(row=1, column=0, sticky="new")
+        ttk.Button(
+            main_frame, text="Remove", command=self.delete_selected
+        ).grid(row=2, column=0, columnspan=2, sticky="nsew")
+        ttk.Button(
+            main_frame, text="Cache all", command=self.cache_all
+        ).grid(row=3, column=0, columnspan=2, sticky="nsew")
+
+        self.filelist += glob.glob(self.path + SEP + "*.csv")
+        self.filelist += glob.glob(self.path + SEP + "*.xls")
         self.filelist.sort()
-        self.all_data = {}
-        self.anal_param = {}
-        self.anal_res = {}
+
         for itemnum in self.filelist_view.get_children():
             self.filelist_view.delete(itemnum)
-        for index, filename in enumerate(self.filelist):
+        for index, full_filename in enumerate(self.filelist):
+            if full_filename is None:
+                continue
+            filename = full_filename[len(self.path)+1:]
+            self.namelist[index] = ".".join(filename.split(".")[:-1])
             self.filelist_view.insert(
                 "",
                 "end",
                 iid=str(index),
-                text=filename[len(self.path)+1:]
+                text=filename,
+                values=(self.namelist[index],"")
             )
+
+    def delete_selected(self) -> None:
+        sel_num, subsel, colnum = self.get_selection_nums()
+        if sel_num == -1:
+            return
+        if subsel == -1:
+            self.filelist_view.delete(f"{sel_num}")
+            self.filelist[sel_num] = None
+            if sel_num in self.all_data:
+                self.all_data.pop(sel_num)
+            if sel_num in self.anal_param:
+                self.anal_param.pop(sel_num)
+                self.anal_res.pop(sel_num)
+            return
+        if colnum == -1:
+            self.filelist_view.delete(f"{sel_num}-{subsel}")
+            self.filelist_view.selection_add(f"{sel_num}")
+            if subsel in self.anal_param[sel_num]:
+                self.anal_param[sel_num].pop(subsel)
+                self.anal_res[sel_num].pop(subsel)
+            return
+        self.filelist_view.delete(f"{sel_num}-{subsel}-{colnum}")
+        self.filelist_view.selection_add(f"{sel_num}-{subsel}")
+        if colnum in self.anal_param[sel_num][subsel]:
+            self.anal_param[sel_num][subsel].pop(colnum)
+            self.anal_res[sel_num][subsel].pop(colnum)
+        return
+
     def get_selection_nums(self) -> tuple[int, int, int]:
+        if len(self.filelist_view.selection()) == 0:
+            return -1, -1, -1
         selection: list[str] = (self.filelist_view.selection()[0]).split("-")
+        if len(selection) == 0:
+            return -1, -1, -1
         sel_num: int = int(selection[0])
         subsel: int = -1
         colnum: int = -1
@@ -84,16 +158,95 @@ class FileListWindow(ttk.Frame):
             colnum = int(selection[2])
         return sel_num, subsel, colnum
 
-    def get_selection(self) -> tuple[int, int, int, str, pd.DataFrame]:
+    def _cache_transfer_curve(self, index: int, subindex: int, col_ind: int) -> None:
+        turn_on, fit_left, fit_right = self._analyze_transfer_curve(index, subindex, col_ind)
+        self.anal_param[index][subindex][col_ind] = AnalParams(turn_on, fit_left, fit_right)
+        table = self.all_data[index][subindex]
+        data: pd.DataFrame = table[[table.columns[0], table.columns[col_ind]]]
+        name = self.namelist[index]
+        result = fet.param_eval(
+            data,
+            on_index=turn_on,
+            fitting_boundaries=(fit_left, fit_right)
+        )
+        mob = fet.mobility_calc(result[0], ci, w, l)
+        self.anal_res[index][subindex][col_ind] = fet.create_record(name, mob, result)
+
+    def cache_all(self) -> None:
+        for index, filename in enumerate(self.filelist):
+            if filename is None:
+                continue
+            if index not in self.all_data:
+                data_storage = self._get_file_data(index)
+            else:
+                data_storage = self.all_data[index]
+            assert fet.data_type(data_storage[0]) != ""
+            if (fet.data_type(data_storage[0]) == "tr"):
+                for subindex, _ in enumerate(data_storage):
+                    for col_ind, colname in enumerate(data_storage[subindex].columns):
+                        if colname == "VGS":
+                            continue
+                        self._cache_transfer_curve(index, subindex, col_ind)
+                        self.filelist_view.item(
+                            f"{index}-{subindex}-{col_ind}",
+                            values=("", "✓")
+                        )
+
+    def _get_file_data(self, file_ind: int) -> list[pd.DataFrame]:
         new_data: bool = False
-        sel_num, subsel, col_ind = self.get_selection_nums()
-        selected: str = self.filelist[sel_num]
-        if sel_num in self.all_data:
-            data_storage = self.all_data[sel_num]
+        selected: Optional[str] = self.filelist[file_ind]
+        if file_ind in self.all_data:
+            data_storage = self.all_data[file_ind]
         else:
             data_storage = fet.extract_data_from_file(selected)
-            self.all_data[sel_num] = data_storage
+            self.all_data[file_ind] = data_storage
+            self.filelist_view.item(
+                f"{file_ind}",
+                values=(self.namelist[file_ind], "✓")
+            )
             new_data = True
+
+        if fet.data_type(data_storage[0]) == "out":
+            if new_data and len(data_storage) > 1:
+                for index, _ in enumerate(data_storage):
+                    self.filelist_view.insert(
+                        f"{file_ind}",
+                        "end",
+                        iid=f"{file_ind}-{index}",
+                        text=f"Sub-{index+1}",
+                        values=(f"{self.name[file_ind]}-{index+1}","")
+                    )
+                self.filelist_view.see(f"{file_ind}-0")
+        elif fet.data_type(data_storage[0]) == "tr":
+            if new_data:
+                for index, sub_data in enumerate(data_storage):
+                    self.filelist_view.insert(
+                        f"{file_ind}",
+                        "end",
+                        iid=f"{file_ind}-{index}",
+                        text=f"Sub-{index+1}",
+                        values=(f"{self.namelist[file_ind]}-{index+1}","")
+                    )
+                    for i2, colname in enumerate(sub_data.columns):
+                        if colname == "VGS":
+                            continue
+                        self.filelist_view.insert(
+                            f"{file_ind}-{index}",
+                            "end",
+                            iid=f"{file_ind}-{index}-{i2}",
+                            text=f"Calc: {colname}"
+                        )
+                    self.filelist_view.see(f"{file_ind}-{index}-1")
+                self.filelist_view.see(f"{file_ind}-0")
+        return data_storage
+
+    def get_selection(self) -> tuple[int, int, int, Literal["", "out", "tr"], pd.DataFrame]:
+        sel_num, subsel, col_ind = self.get_selection_nums()
+        if sel_num == -1:
+            return -1, -1, -1, "", [pd.DataFrame]
+        selected: Optional[str] = self.filelist[sel_num]
+        assert selected is not None, "Deleted item selected somehow"
+        data_storage: list[pd.DataFrame] = self._get_file_data(sel_num)
         if subsel >= 0:
             book = data_storage[subsel]
         elif subsel == -1:
@@ -103,66 +256,47 @@ class FileListWindow(ttk.Frame):
                 return -1, -1, -1, "", [pd.DataFrame]
         else:
             assert False, f"Invalid subsel value {subsel}"
-
-        datatype: str
-        if list(book.columns.values)[0] == "VDS":
-            datatype = "out"
-            if new_data and len(data_storage) > 1:
-                for index, _ in enumerate(data_storage):
-                    self.filelist_view.insert(
-                        f"{sel_num}",
-                        "end",
-                        iid=f"{sel_num}-{index}",
-                        text=f"Sub-{index+1}"
-                    )
-                self.filelist_view.see(f"{sel_num}-0")
-        elif list(book.columns.values)[0] == "VGS":
-            datatype = "tr"
-            if new_data:
-                for index, sub_data in enumerate(data_storage):
-                    self.filelist_view.insert(
-                        f"{sel_num}",
-                        "end",
-                        iid=f"{sel_num}-{index}",
-                        text=f"Sub-{index+1}"
-                    )
-                    for i2, colname in enumerate(sub_data.columns):
-                        if colname == "VGS":
-                            continue
-                        self.filelist_view.insert(
-                            f"{sel_num}-{index}",
-                            "end",
-                            iid=f"{sel_num}-{index}-{i2}",
-                            text=f"Calculations: {colname}"
-                        )
-                    self.filelist_view.see(f"{sel_num}-{index}-1")
-                self.filelist_view.see(f"{sel_num}-0")
-        else:
+        datatype: Literal["", "out", "tr"] = fet.data_type(book)
+        if datatype == "":
             return -1, -1, -1, "", [pd.DataFrame()]
         return sel_num, subsel, col_ind, datatype, book
 
-    def get_name_selected(self) -> str:
+    def get_selected_filename(self) -> str:
+        if len(self.filelist_view.selection()) == 0:
+            return ""
         selection: list[str] = (self.filelist_view.selection()[0]).split("-")
         sel_num: int = int(selection[0])
-        return self.filelist[sel_num][len(self.path)+1]
+        filename = self.filelist[sel_num]
+        assert filename is not None, "Somehow deleted item got selected"
+        return filename[len(self.path)+1:]
 
-    def analyze_transfer_curve(self) -> tuple[int, int, int]:
+    def get_selected_name(self) -> str:
+        if len(self.filelist_view.selection()) == 0:
+            return ""
+        selection: list[str] = (self.filelist_view.selection()[0]).split("-")
+        sel_num: int = int(selection[0])
+        return self.namelist[sel_num]
+
+    def analyze_selected_transfer(self) -> tuple[int, int, int]:
         sel, subsel, col_ind = self.get_selection_nums()
-        if not sel in self.anal_param:
-            self.anal_param[sel] = {}
-            self.anal_res[sel] = {}
-        if not subsel in self.anal_param[sel]:
-            self.anal_param[sel][subsel] = {}
-            self.anal_res[sel][subsel] = {}
-        if not col_ind in self.anal_param[sel][subsel]:
-            table: pd.DataFrame = self.all_data[sel][subsel]
+        return self._analyze_transfer_curve(sel, subsel, col_ind)
+
+    def _analyze_transfer_curve(self, index, sub_ind, col_ind) -> tuple[int, int, int]:
+        if not index in self.anal_param:
+            self.anal_param[index] = {}
+            self.anal_res[index] = {}
+        if not sub_ind in self.anal_param[index]:
+            self.anal_param[index][sub_ind] = {}
+            self.anal_res[index][sub_ind] = {}
+        if not col_ind in self.anal_param[index][sub_ind]:
+            table: pd.DataFrame = self.all_data[index][sub_ind]
             data: pd.DataFrame = table[[table.columns[0], table.columns[col_ind]]]
             turn_on = fet.find_on_index(data)
             fit_left, fit_right = fet.find_fitting_boundaries(data)
-            self.anal_param[sel][subsel][col_ind] = AnalParams(turn_on, fit_left, fit_right)
-        turn_on = self.anal_param[sel][subsel][col_ind].turn_on
-        fit_left = self.anal_param[sel][subsel][col_ind].fit_left
-        fit_right = self.anal_param[sel][subsel][col_ind].fit_right
+            self.anal_param[index][sub_ind][col_ind] = AnalParams(turn_on, fit_left, fit_right)
+        turn_on = self.anal_param[index][sub_ind][col_ind].turn_on
+        fit_left = self.anal_param[index][sub_ind][col_ind].fit_left
+        fit_right = self.anal_param[index][sub_ind][col_ind].fit_right
         return turn_on, fit_left, fit_right
 
     def save_analysis_results(
@@ -170,9 +304,13 @@ class FileListWindow(ttk.Frame):
         mob: float,
         result: tuple[float, float, float, float, float, float]
     ) -> None:
-        name = self.get_name_selected()
+        name = self.get_selected_filename()
         sel, subsel, col_ind = self.get_selection_nums()
         self.anal_res[sel][subsel][col_ind] = fet.create_record(name, mob, result)
+        self.filelist_view.item(
+            f"{sel}-{subsel}-{col_ind}",
+            values=("","✓")
+        )
 
     def save_analysis_params(self, parameters: AnalParams) -> None:
         sel, subsel, col = self.get_selection_nums()
@@ -180,7 +318,7 @@ class FileListWindow(ttk.Frame):
 
 class AppContainer(tk.Tk):
     """The main window of the App"""
-    
+
     def make_slider(self, master: ttk.Frame, text: str, rownum: int) -> ttk.Scale:
         ttk.Label(master, text=text).grid(row=rownum, column=0, sticky="nse")
         new_scale = ttk.Scale(
@@ -194,7 +332,7 @@ class AppContainer(tk.Tk):
         )
         new_scale.grid(row=rownum, column=1, sticky="nswe")
         return new_scale
-    
+
     def __init__(self, *args, **kwargs) -> None:
         tk.Tk.__init__(self, *args, **kwargs)
         tk.Tk.columnconfigure(self, 0, weight=1)
@@ -225,7 +363,7 @@ class AppContainer(tk.Tk):
             inputcontainer, textvariable=self.folder_text, width=60
         ).grid(row=0, column=0, sticky="nsew")
         ttk.Button(
-            inputcontainer, text="Search", command=self.add_folder
+            inputcontainer, text="Open Folder", command=self.add_folder
         ).grid(row=0, column=1, sticky="nsew")
 
         pl.rc('font', size=8)
@@ -240,7 +378,8 @@ class AppContainer(tk.Tk):
             )
         self.sliding: int = 0
         self.bind("<<TreeviewSelect>>", self.file_selected)
-    
+        self.bind("<<NotebookTabChanged>>", self.file_selected)
+
     def add_folder(self):
         path = self.folder_text.get()
         name = path.split(SEP)[-1]
@@ -252,14 +391,17 @@ class AppContainer(tk.Tk):
         self.filelistplace.add(child, text=name)
 
     def file_selected(self, _: tk.Event):
-        name = self.filelistplace.tab(self.filelistplace.select(), "text")
-        filelist_view = self.folders[name]
+        foldername = self.filelistplace.tab(self.filelistplace.select(), "text")
+        filelist_view = self.folders[foldername]
         sel_num, subsel, plottingtype, datatype, book = filelist_view.get_selection()
-        if sel_num == -1:
-            return
+        name = filelist_view.get_selected_name()
 
         for axes in self.graph.get_axes():
             self.graph.delaxes(axes)
+
+        if sel_num == -1:
+            self.canvas.draw()
+            return
 
         if plottingtype == -1 or datatype == "out":
             for slider in self.sliders.values():
@@ -307,16 +449,8 @@ class AppContainer(tk.Tk):
         fit_right: int
         foldername = self.filelistplace.tab(self.filelistplace.select(), "text")
         filelist_view = self.folders[foldername]
-        name: str = filelist_view.get_name_selected()
-        # IMPORTANT CONSTANTS
-        #TODO: constants should be changed in the UI
-        ci = 3.45E-4 # F/m^2 (areal capacitance) SiO2 100 nm
-        #ci = 1.18E-3 # F/m^2 (areal capacitance) Al2O3 50 nm
-        #ci = 5.78E-5 # pF/mm^2 crosslinked PVP solution processed
-        w = 2000 # micrometers (channel length)
-        l = 200 # micrometers (channel width)
         data: pd.DataFrame = table[[table.columns[0], table.columns[col_ind]]]
-        turn_on, fit_left, fit_right = filelist_view.analyze_transfer_curve()
+        turn_on, fit_left, fit_right = filelist_view.analyze_selected_transfer()
         self.sliding = -3
         self.sliders["Turn-ON"].set(turn_on / len(data) * 100)
         self.sliders["Fit from"].set(fit_left / len(data) * 100)
@@ -362,7 +496,7 @@ class AppContainer(tk.Tk):
         foldername = self.filelistplace.tab(self.filelistplace.select(), "text")
         filelist_view = self.folders[foldername]
         sel, sub_sel, col, _, table = filelist_view.get_selection()
-        name = filelist_view.get_name_selected()
+        name = filelist_view.get_selected_name()
         turn_on = int(round(self.sliders["Turn-ON"].get() * len(table) / 100))
         fit_left = int(round(self.sliders["Fit from"].get() * len(table) / 100))
         fit_right = int(round(self.sliders["Fit to"].get() * len(table) / 100))
