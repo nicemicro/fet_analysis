@@ -9,21 +9,26 @@ Licenced under the GPL v3.0
 
 import pandas as pd
 import numpy as np
+import numpy.typing as npt
 import glob
 import re
 import matplotlib.pyplot as pl
 from scipy import signal
-from typing import Literal, Union
+from typing import Literal, Union, Optional
 
-def file_convert(filename, header=2):
+def file_convert(filename: str, header_num: int=2, encoding: str="korean") -> list[pd.DataFrame]:
     data = pd.read_csv(filename, delimiter=",",
-                       header=header, encoding="korean")
-    header = {"VDS": " Drain_Voltage (V)",
-              "VGS": " Gate_Voltage (V)",
-              "IDS": " Drain_Current (A)"}
-    if (not header["VDS"] in data.columns) or \
-        (not header["VGS"] in data.columns) or \
-        (not header["IDS"] in data.columns):
+                       header=header_num, encoding=encoding)
+    header: dict[str, str] = {
+        "VDS": " Drain_Voltage (V)",
+        "VGS": " Gate_Voltage (V)",
+        "IDS": " Drain_Current (A)"
+    }
+    if (
+        (not header["VDS"] in data.columns) or
+        (not header["VGS"] in data.columns) or
+        (not header["IDS"] in data.columns)
+    ):
         return []
     data = data[[header["VDS"], header["VGS"], header["IDS"]]]
     gt_vltgs = data[header["VGS"]].unique()
@@ -70,7 +75,7 @@ def file_convert(filename, header=2):
     return [new_data.rename(columns={header["VDS"]: "VDS",
                                     header["VGS"]: "VGS"})]
 
-def read_excel(filename):
+def read_excel(filename: str) -> list[pd.DataFrame]:
     raw_data = pd.read_excel(filename)
     blocks = {}
     data = pd.DataFrame([])
@@ -130,9 +135,10 @@ def read_excel(filename):
         processed_data = [data[0:sw_reverse+1], data[sw_reverse+1:]]
     return processed_data
 
-def read_simple_file(filename, voltages=None):
+def read_simple_file(filename: str, voltages: Optional[list[float]]=None) -> list[pd.DataFrame]:
     if voltages is None:
         voltages = setvtgs
+    assert voltages is not None
     raw_data = pd.read_csv(filename, delimiter=',', header=None)
     ren = {}
     x_val = raw_data[[0]].to_numpy()[:,0]
@@ -158,7 +164,7 @@ def read_simple_file(filename, voltages=None):
     return processed_data
 
 #%%
-def smooth_data(data_all):
+def smooth_data(data_all: pd.DataFrame) -> pd.DatFrame:
     for data_part in data_all:
         for index in data_part.columns:
             if index == data_part.columns[0]: continue
@@ -172,10 +178,15 @@ def smooth_data(data_all):
     return data_all
 
 #%%
-def draw_output(book, axes, limit=0, label_font_s=14):
+def draw_output(
+    book: pd.DatFrame,
+    axes: pl.Axes,
+    limit: np.floating=np.float32(0),
+    label_font_s: int=14
+) -> None:
     if limit == 0 or limit == np.nan:
         limit = np.absolute(book.to_numpy()[:,1:]).max() * 1.2
-    x = np.array([])
+    x: npt.NDArray = np.array([])
     axes.set_xlabel(r'$V_{\mathrm{DS}}$ / V', fontsize=label_font_s)
     axes.set_ylabel(r'$I_{\mathrm{DS}}$ / A', fontsize=label_font_s)
     for column_name in book.columns:
@@ -185,12 +196,19 @@ def draw_output(book, axes, limit=0, label_font_s=14):
             axes.plot(x, book[[column_name]].to_numpy())
     axes.set_ylim(-limit*0.1, limit)
 
-def draw_transfer(book, axes, axes2, limit=0, low_lim=0, label_font_s=14):
-    if limit == 0:
+def draw_transfer(
+    book: pd.DataFrame,
+    axes: pl.Axes,
+    axes2: pl.Axes,
+    limit: np.floating=np.float32(0),
+    low_lim: np.floating=np.float32(0),
+    label_font_s: int=14
+) -> None:
+    if limit == 0 or limit == np.nan:
         limit = np.absolute(book.to_numpy()[:,1:]).max() * 8
-    if low_lim == 0:
+    if low_lim == 0 or low_lim == np.nan:
         low_lim = max(np.absolute(book.to_numpy()[:,1:]).min() / 4, 1E-13)
-    x = np.array([])
+    x: npt.NDArray = np.array([])
     axes.set_xlabel(r'$V_{\mathrm{GS}}$ / V', fontsize=label_font_s)
     axes.set_ylabel(r'$|I_{\mathrm{DS}}|$ / A', fontsize=label_font_s)
     axes2.set_ylabel(r'$|I_{\mathrm{DS}}|^{-1/2}$ / A$^{-1/2}$', fontsize=label_font_s)
@@ -287,7 +305,12 @@ def find_fitting_boundaries(data: pd.DataFrame) -> tuple[int, int]:
 def sort_transfer_curve(data: pd.DataFrame) -> pd.DataFrame:
     return data.sort_values("VGS", ascending=data.to_numpy()[:,-1].mean() > 0)
 
-def param_eval_core(data, debug_on=False, on_index=None, fitting_boundaries=None):
+def param_eval_core(
+    data: pd.DataFrame,
+    debug_on: bool=False,
+    on_index: Optional[int]=None,
+    fitting_boundaries: Optional[tuple[int, int]]=None
+) -> tuple[float, float, Optional[float], Optional[float], float, float, float]:
     # if the average y value is positive, we have n-type device, so the
     # data should be ordered in ascending order by VGS.
     data = sort_transfer_curve(data)
@@ -338,7 +361,7 @@ def param_eval_core(data, debug_on=False, on_index=None, fitting_boundaries=None
             # Off current is the averaged current at the turn on voltage
             i_off = avg[on_index]
     # On Current
-    i_on = y_val[on_index:].max()
+    i_on: float = y_val[on_index:].max()
     # Linear fitting
     if fitting_boundaries is None:
         fit_from, fit_to = find_fitting_boundaries(data)
@@ -347,34 +370,46 @@ def param_eval_core(data, debug_on=False, on_index=None, fitting_boundaries=None
     sqrty = np.sqrt(y_val)
     model = np.polyfit(x_val[fit_from:fit_to], sqrty[fit_from:fit_to], 1)
     # Slope for mobility calculations
-    mob_slope = model[0]
+    mob_slope: float = model[0]
     # Threshold Voltage
-    v_th = -model[1] / model[0]
-    debug = pd.DataFrame()
+    v_th: float = -model[1] / model[0]
+    debug: pd.DataFrame = pd.DataFrame()
     if debug_on:
         logy = np.log10(y_val)
-        logavg = np.convolve(np.pad(logy, avg_k_os, mode="symmetric"), avg_kernel,
-                            mode="valid")
+        logavg = np.convolve(
+            np.pad(logy, avg_k_os, mode="symmetric"), avg_kernel, mode="valid"
+        )
         avg = 10 ** logavg
         sl_kernel = [0.125, 0.25, 0, -0.25, -0.125]
         #sl_kernel = [1/18, 1/12, 1/6, 0, -1/6, -1/12, -1/18]
         sl_k_os = int((len(sl_kernel) - 1) / 2) # overshoot of the slope kernel
-        slope = np.convolve(np.pad(logavg, sl_k_os, mode="symmetric"), sl_kernel,
-                            mode="valid")
+        slope = np.convolve(
+            np.pad(logavg, sl_k_os, mode="symmetric"), sl_kernel, mode="valid"
+        )
         slope = slope * (slope > 0)  # we don't care about decreasing current
-        slslope = np.convolve(np.pad(slope, sl_k_os, mode="symmetric"), sl_kernel,
-                              mode="valid")
-        slope2 = np.convolve(np.pad(sqrty, sl_k_os, mode="symmetric"), sl_kernel,
-                            mode="valid")
-        debug = pd.DataFrame(np.dstack((x_val, y_val, logy, logavg, avg, slope,
-                                        slslope, sqrty, slope2))[0,:,:],
-                             columns=["x", "y", "log(y)", "avg(log(y))", 
-                                      "avg(y)", "log(y)'", "log(y)''",
-                                      "sqrt(y)", "sqrt(y)'"])
+        slslope = np.convolve(
+            np.pad(slope, sl_k_os, mode="symmetric"), sl_kernel, mode="valid"
+        )
+        slope2 = np.convolve(
+            np.pad(sqrty, sl_k_os, mode="symmetric"), sl_kernel, mode="valid"
+        )
+        debug = pd.DataFrame(
+            np.dstack(
+                (x_val, y_val, logy, logavg, avg, slope, slslope, sqrty, slope2)
+                )[0,:,:],
+            columns=[
+                "x", "y", "log(y)", "avg(log(y))", "avg(y)",
+                "log(y)'", "log(y)''", "sqrt(y)", "sqrt(y)'"
+            ]
+        )
     return mob_slope, v_th, v_turnon, ss, i_off, i_on, debug
 
-def param_eval(data, on_index=None, fitting_boundaries=None):
-    mob_slope, v_th, v_turnon, ss, i_off, i_on, debug = param_eval_core(
+def param_eval(
+    data: pd.DataFrame,
+    on_index: Optional[int]=None,
+    fitting_boundaries: Optional[tuple[int, int]]=None
+) -> tuple[float, float, Optional[float], Optional[float], float, float]:
+    mob_slope, v_th, v_turnon, ss, i_off, i_on, _ = param_eval_core(
         data, on_index=on_index, fitting_boundaries=fitting_boundaries
     )
     return mob_slope, v_th, v_turnon, ss, i_off, i_on
@@ -385,7 +420,7 @@ def draw_analyzed_graph(
     axes: pl.Axes,
     axes2: pl.Axes,
     mob: float,
-    params: tuple[float, float, float, float, float, float],
+    params: tuple[float, float, Optional[float], Optional[float], float, float],
     fontsize: int = 8,
     label_font_s: int = 14
 ) -> None:
@@ -419,7 +454,7 @@ def draw_analyzed_graph(
         r'$I_{\mathrm{On}} / I_{\mathrm{Off}}$ = ' + f'{float(f"{onoff:.1E}"):g}',
         fontsize=fontsize
     )
-    if not v_turnon is None:
+    if v_turnon is not None and ss is not None:
         # show off current and subthreshold swing
         x_s = [x_min, v_turnon + ss, v_turnon + ss, v_turnon, v_turnon]
         y_s = [i_off, i_off, i_off * 10, i_off * 10, i_off]
@@ -439,11 +474,11 @@ def mobility_calc(mob_slope: float, ci: float, w: float, l: float) -> float:
 def create_record(
     name: Union[str, dict[str, str]],
     mob: float,
-    params: tuple[float, float, float, float, float, float]
+    params: tuple[float, float, Optional[float], Optional[float], float, float]
 ) -> pd.DataFrame:
     _, v_th, v_turnon, ss, i_off, i_on = params
     onoff = i_on / i_off
-    data_list: list[Union[str, float]] = []
+    data_list: list[Union[str, float, None]] = []
     column_list: list[str] = []
     if isinstance(name, str):
         data_list = [name]
@@ -456,7 +491,9 @@ def create_record(
     new_record = pd.DataFrame([data_list], columns=column_list)
     return new_record
 
-def evaluate(data_all, namelist: list[str], path: str):
+def evaluate(
+    data_all: list[pd.DataFrame], namelist: list[str], path: str
+) -> pd.DataFrame:
     # IMPORTANT CONSTANTS
     ci = 3.45E-4 # F/m^2 (areal capacitance) SiO2 100 nm
     #ci = 1.18E-3 # F/m^2 (areal capacitance) Al2O3 50 nm
@@ -491,7 +528,11 @@ def evaluate(data_all, namelist: list[str], path: str):
     return data_table
 
 #%%
-def draw_graphs(data_all, namelist, path):
+def draw_graphs(
+    data_all: list[pd.DataFrame],
+    namelist: list[str],
+    path: str
+) -> None:
     out_max_list: list[float] = []
     tr_max_list: list[float] = []
     tr_min_list: list[float] = []
@@ -506,17 +547,19 @@ def draw_graphs(data_all, namelist, path):
     out_max = np.array(sorted(out_max_list), dtype=float)
     tr_max = np.array(sorted(tr_max_list), dtype=float)
     tr_min = np.array(sorted(tr_min_list), dtype=float)
-    if len(out_max) == 0:
-        outlimit = 1
-    else:
-        outlimit = min((np.median(out_max) + np.std(out_max) * 2.5) * 1.2,
-                       out_max.max() * 1.2)
-    if len(tr_max) == 0:
-        trlimit = 1
-    else:
-        trlimit = min((np.median(tr_max) + np.std(tr_max) * 2.5) * 10,
-                      tr_max.max() * 10)
-    trlowlim = tr_min[(tr_min > 0)].min() / 2
+    outlimit: float = 1.
+    trlimit: float = 1.
+    if len(out_max) > 0:
+        outlimit = min(
+            (np.median(out_max) + np.std(out_max) * 2.5) * 1.2,
+            out_max.max() * 1.2
+        )
+    if len(tr_max) > 0:
+        trlimit = min(
+            (np.median(tr_max) + np.std(tr_max) * 2.5) * 10,
+            tr_max.max() * 10
+        )
+    trlowlim: float = tr_min[(tr_min > 0)].min() / 2
     for index, name in enumerate(namelist):
         book = data_all[index]
         # create figures
@@ -526,16 +569,16 @@ def draw_graphs(data_all, namelist, path):
         axes.set_title(name, fontsize=16)
         if list(book.columns.values)[0] == "VDS":
             # output curve
-            draw_output(book, axes, outlimit)
+            draw_output(book, axes, np.float32(outlimit))
         elif list(book.columns.values)[0] == "VGS":
             # transfer curve
             axes2 = axes.twinx()
-            draw_transfer(book, axes, axes2, trlimit, trlowlim)
+            draw_transfer(book, axes, axes2, np.float32(trlimit), np.float32(trlowlim))
         pl.savefig(path + SEP + name + ".png", bbox_inches = 'tight')
         pl.show()
     return
 
-def extract_data_from_file(filename):
+def extract_data_from_file(filename: str) -> list[pd.DataFrame]:
     if filename[-len(outend):] == outend or filename[-len(trend):] == trend:
         data = read_simple_file(filename)
         # COMMENT OUT THE FOLLOWING LINES IF YOU WANT TO WORK WITH THE
@@ -548,7 +591,7 @@ def extract_data_from_file(filename):
         data = file_convert(filename)
     return data
 
-def process_directory(path):
+def process_directory(path: str) -> None:
     """
     Goes through all csv files in the directory, converts the data files, and
     creates the graphs.
@@ -595,7 +638,7 @@ def process_directory(path):
     table = evaluate(data_all, newnamelist, path)
     table.to_csv(path + SEP + "characteristics.csv", index=False)
 #%%
-def graph_debug(data, name):
+def graph_debug(data: pd.DataFrame, name: str) -> None:
     pl.rc('font', size=10)
     fig = pl.figure(figsize=(7/2.54, 5/2.54), dpi=600)
     axes = fig.add_axes([0,0,1,1])
@@ -617,17 +660,17 @@ def graph_debug(data, name):
     pl.show()
 
 #%%
-def load_data(filename):
+def load_data(filename: str) -> tuple[npt.NDArray, npt.NDArray]:
     raw_data = pd.read_csv(filename, delimiter=',', header=None)
     x_values = raw_data.to_numpy()[: , 0]
     y_values = raw_data.to_numpy()[:, 1: ]
     return x_values, y_values
 
-trend = "tr.csv"
-outend = "out.csv"
-excelend = ".xls"
-SEP = "/"
-setvtgs = [0, 10, 20, 30, 40, 50, 60]
+trend: str = "tr.csv"
+outend: str = "out.csv"
+excelend: str = ".xls"
+SEP: str = "/"
+setvtgs: list[float] = [0, 10, 20, 30, 40, 50, 60]
 
 if __name__ == '__main__':
     print("")

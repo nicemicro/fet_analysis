@@ -41,10 +41,9 @@ class FileListWindow(ttk.Frame):
         self,
         path: str,
         name: str,
-        master: ttk.Notebook,
-        *args, **kwargs
+        master: ttk.Notebook
     ) -> None:
-        ttk.Frame.__init__(self, *args, **kwargs)
+        ttk.Frame.__init__(self)
 
         self.path: str = path
         self.name: str = name
@@ -200,7 +199,9 @@ class FileListWindow(ttk.Frame):
                         fontsize=8,
                         label_font_s=14
                     )
-                    pl.savefig(f"{self.path}{SEP}{name}-calc{col_ind}.png", bbox_inches = 'tight')
+                    pl.savefig(
+                        f"{self.path}{SEP}{name}-calc{col_ind}.png", bbox_inches = 'tight'
+                    )
                     pl.close(fig)
 
     def delete_selected(self) -> None:
@@ -288,6 +289,7 @@ class FileListWindow(ttk.Frame):
         if file_ind in self.all_data:
             data_storage = self.all_data[file_ind]
         else:
+            assert selected is not None
             raw_data = fet.extract_data_from_file(selected)
             data_storage = {ind: data for ind, data in enumerate(raw_data)}
             self.all_data[file_ind] = data_storage
@@ -373,7 +375,11 @@ class FileListWindow(ttk.Frame):
         sel, subsel, col_ind = self.get_selection_nums()
         return self._analyze_transfer_curve(sel, subsel, col_ind)
 
-    def _analyze_transfer_curve(self, index, sub_ind, col_ind) -> tuple[int, int, int]:
+    def _analyze_transfer_curve(self,
+        index: int,
+        sub_ind: int,
+        col_ind: int
+    ) -> tuple[int, int, int]:
         if not index in self.anal_param:
             self.anal_param[index] = {}
             self.anal_res[index] = {}
@@ -394,7 +400,7 @@ class FileListWindow(ttk.Frame):
     def save_selected_results(
         self,
         mob: float,
-        result: tuple[float, float, float, float, float, float]
+        result: tuple[float, float, Optional[float], Optional[float], float, float]
     ) -> None:
         sel, subsel, col_ind = self.get_selection_nums()
         self._save_analysis_results(sel, subsel, col_ind, mob, result)
@@ -405,7 +411,7 @@ class FileListWindow(ttk.Frame):
         subindex: int,
         col_ind: int,
         mob: float,
-        result: tuple[float, float, float, float, float, float]
+        result: tuple[float, float, Optional[float], Optional[float], float, float]
     ) -> None:
         desc: dict[str, str] = {"Name": self.namelist[index]}
         if len(self.all_data[index]) > 1:
@@ -439,8 +445,8 @@ class AppContainer(tk.Tk):
         new_scale.grid(row=rownum, column=1, sticky="nswe")
         return new_scale
 
-    def __init__(self, *args, **kwargs) -> None:
-        tk.Tk.__init__(self, *args, **kwargs)
+    def __init__(self) -> None:
+        tk.Tk.__init__(self)
         tk.Tk.columnconfigure(self, 0, weight=1)
         tk.Tk.rowconfigure(self, 0, weight=0)
         tk.Tk.rowconfigure(self, 1, weight=10)
@@ -486,7 +492,7 @@ class AppContainer(tk.Tk):
         self.bind("<<TreeviewSelect>>", self.file_selected)
         self.bind("<<NotebookTabChanged>>", self.file_selected)
 
-    def add_folder(self):
+    def add_folder(self) -> None:
         path = self.folder_text.get()
         name = path.split(SEP)[-1]
         while name in self.folders:
@@ -496,7 +502,7 @@ class AppContainer(tk.Tk):
         self.folders[name] = child
         self.filelistplace.add(child, text=name)
 
-    def file_selected(self, _: tk.Event):
+    def file_selected(self, _: tk.Event) -> None:
         foldername = self.filelistplace.tab(self.filelistplace.select(), "text")
         filelist_view = self.folders[foldername]
         sel_num, subsel, plottingtype, datatype, book = filelist_view.get_selection()
