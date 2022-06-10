@@ -15,7 +15,7 @@ from tkinter import ttk
 from typing import Optional, Literal
 
 import pandas as pd
-import pylab as pl
+import matplotlib.pyplot as pl
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
                                                NavigationToolbar2Tk)
 
@@ -50,7 +50,7 @@ class FileListWindow(ttk.Frame):
         self.name: str = name
         self.filelist: list[Optional[str]] = []
         self.namelist: dict[int, str] = {}
-        self.all_data: dict[int, list[pd.DataFrame]] = {}
+        self.all_data: dict[int, dict[int, pd.DataFrame]] = {}
         self.anal_param: dict[int, dict[int, dict[int, AnalParams]]] = {}
         self.anal_res: dict[int, dict[int, dict[int, pd.Series]]] = {}
 
@@ -62,7 +62,7 @@ class FileListWindow(ttk.Frame):
         main_frame.columnconfigure(0, weight=10)
         main_frame.columnconfigure(1, weight=0)
         main_frame.rowconfigure(0, weight=10)
-        for rownum in [1, 2, 3, 4]:
+        for rownum in [1, 2, 3, 4, 5]:
             main_frame.rowconfigure(rownum, weight=0)
 
         self.filelist_view = ttk.Treeview(
@@ -98,6 +98,9 @@ class FileListWindow(ttk.Frame):
         ttk.Button(
             main_frame, text="Export cached data", command=self.export_cached
         ).grid(row=4, column=0, columnspan=2, sticky="nsew")
+        ttk.Button(
+            main_frame, text="Save cached graphs to png", command=self.export_graphs
+        ).grid(row=5, column=0, columnspan=2, sticky="nsew")
 
         self.filelist += glob.glob(self.path + SEP + "*.csv")
         self.filelist += glob.glob(self.path + SEP + "*.xls")
@@ -135,6 +138,70 @@ class FileListWindow(ttk.Frame):
         result = pd.concat(result_list)
         result = result.reset_index(drop=True)
         result.to_csv(f"{self.path}{SEP}result.csv", index=False)
+
+    def export_graphs(self) -> None:
+        file_res_indeces = list(self.all_data.keys())
+        file_res_indeces.sort()
+        for file_index in file_res_indeces:
+            sub_indeces = list(self.all_data[file_index].keys())
+            sub_indeces.sort()
+            name = self.namelist[file_index]
+            data = self.all_data[file_index]
+            assert len(data) > 0
+            fig = pl.figure(figsize=(7/2.54, 5/2.54), dpi=600)
+            axes = fig.add_axes([0,0,1,1])
+            axes.set_title(name, fontsize=16)
+            if fet.data_type(data[0]) == "out":
+                # output curve
+               fet.draw_output(pd.concat(data.values()), axes)
+            elif fet.data_type(data[0]) == "tr":
+                # transfer curve
+                axes2 = axes.twinx()
+                fet.draw_transfer(pd.concat(data.values()), axes, axes2)
+            pl.savefig(f"{self.path}{SEP}{name}.png", bbox_inches = 'tight')
+            pl.close(fig)
+            for sub_index in sub_indeces:
+                sub_data = data[sub_index]
+                if fet.data_type(sub_data) == "out" and len(data) > 1:
+                    fig = pl.figure(figsize=(7/2.54, 5/2.54), dpi=600)
+                    axes = fig.add_axes([0,0,1,1])
+                    axes.set_title(name, fontsize=16)
+                    fet.draw_output(sub_data, axes)
+                    pl.savefig(
+                        f"{self.path}{SEP}{name}-sweep{sub_index+1}.png",
+                        bbox_inches = 'tight'
+                    )
+                    pl.close(fig)
+                if file_index not in self.anal_res or sub_index not in self.anal_res[file_index]:
+                    continue
+                column_indeces = list(self.anal_res[file_index][sub_index].keys())
+                column_indeces.sort()
+                for col_ind in column_indeces:
+                    data = sub_data[[sub_data.columns[0], sub_data.columns[col_ind]]]
+                    turn_on, fit_left, fit_right = (
+                        self._analyze_transfer_curve(file_index, sub_index, col_ind)
+                    )
+                    result = fet.param_eval(
+                        data,
+                        on_index=turn_on,
+                        fitting_boundaries=(fit_left, fit_right)
+                    )
+                    mob = fet.mobility_calc(result[0], ci, w, l)
+                    fig = pl.figure(figsize=(7/2.54, 5/2.54), dpi=600)
+                    axes = fig.add_axes([0,0,1,1])
+                    axes2 = axes.twinx()
+                    axes.set_title(name, fontsize=16)
+                    fet.draw_analyzed_graph(
+                        data,
+                        axes,
+                        axes2,
+                        mob,
+                        result,
+                        fontsize=8,
+                        label_font_s=14
+                    )
+                    pl.savefig(f"{self.path}{SEP}{name}-calc{col_ind}.png", bbox_inches = 'tight')
+                    pl.close(fig)
 
     def delete_selected(self) -> None:
         sel_num, subsel, colnum = self.get_selection_nums()
@@ -215,13 +282,14 @@ class FileListWindow(ttk.Frame):
                             values=("", "✓")
                         )
 
-    def _get_file_data(self, file_ind: int) -> list[pd.DataFrame]:
+    def _get_file_data(self, file_ind: int) -> dict[int, pd.DataFrame]:
         new_data: bool = False
         selected: Optional[str] = self.filelist[file_ind]
         if file_ind in self.all_data:
             data_storage = self.all_data[file_ind]
         else:
-            data_storage = fet.extract_data_from_file(selected)
+            raw_data = fet.extract_data_from_file(selected)
+            data_storage = {ind: data for ind, data in enumerate(raw_data)}
             self.all_data[file_ind] = data_storage
             self.filelist_view.item(
                 f"{file_ind}",
@@ -243,7 +311,7 @@ class FileListWindow(ttk.Frame):
                 self.filelist_view.see(f"{file_ind}-0")
         elif fet.data_type(data_storage[0]) == "tr":
             if new_data:
-                for index, sub_data in enumerate(data_storage):
+                for index, sub_data in list(data_storage.items()):
                     self.filelist_view.insert(
                         f"{file_ind}",
                         "end",
@@ -270,12 +338,12 @@ class FileListWindow(ttk.Frame):
             return -1, -1, -1, "", [pd.DataFrame]
         selected: Optional[str] = self.filelist[sel_num]
         assert selected is not None, "Deleted item selected somehow"
-        data_storage: list[pd.DataFrame] = self._get_file_data(sel_num)
+        data_storage: dict[int, pd.DataFrame] = self._get_file_data(sel_num)
         if subsel >= 0:
             book = data_storage[subsel]
         elif subsel == -1:
             if len(data_storage) > 0:
-                book = pd.concat(data_storage)
+                book = pd.concat(data_storage.values())
             else:
                 return -1, -1, -1, "", [pd.DataFrame]
         else:

@@ -11,7 +11,7 @@ import pandas as pd
 import numpy as np
 import glob
 import re
-import pylab as pl
+import matplotlib.pyplot as pl
 from scipy import signal
 from typing import Literal, Union
 
