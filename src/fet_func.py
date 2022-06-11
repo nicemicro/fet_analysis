@@ -164,7 +164,7 @@ def read_simple_file(filename: str, voltages: Optional[list[float]]=None) -> lis
     return processed_data
 
 #%%
-def smooth_data(data_all: pd.DataFrame) -> pd.DatFrame:
+def smooth_data(data_all: pd.DataFrame) -> pd.DataFrame:
     for data_part in data_all:
         for index in data_part.columns:
             if index == data_part.columns[0]: continue
@@ -179,7 +179,7 @@ def smooth_data(data_all: pd.DataFrame) -> pd.DatFrame:
 
 #%%
 def draw_output(
-    book: pd.DatFrame,
+    book: pd.DataFrame,
     axes: pl.Axes,
     limit: np.floating=np.float32(0),
     label_font_s: int=14

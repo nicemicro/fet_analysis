@@ -491,10 +491,6 @@ class AppContainer(tk.Tk):
         self.sliding: int = 0
         self.bind("<<TreeviewSelect>>", self.file_selected)
         self.bind("<<NotebookTabChanged>>", self.file_selected)
-        self.bind("<Return>", self.enter_pressed)
-
-    def enter_pressed(self, _: tk.Event) -> None:
-        self.add_folder()
 
     def add_folder(self) -> None:
         path = self.folder_text.get()
@@ -504,7 +500,7 @@ class AppContainer(tk.Tk):
         child = FileListWindow(path, name, self.filelistplace)
         self.folders[name] = child
         self.filelistplace.add(child, text=name)
-        self.filelistplace.select(len(self.folders)-1)
+        child.tkraise()
 
     def file_selected(self, _: tk.Event) -> None:
         foldername = self.filelistplace.tab(self.filelistplace.select(), "text")
