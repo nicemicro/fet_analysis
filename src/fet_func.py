@@ -16,6 +16,49 @@ import matplotlib.pyplot as pl
 from scipy import signal
 from typing import Literal, Union, Optional
 
+
+class FetResult:
+    def __init__(
+        self,
+        name: Union[str, dict[str, str]],
+        mob: float,
+        mob_slope: float,
+        v_th: float,
+        v_on: Optional[float],
+        ss: Optional[float],
+        i_off: float,
+        i_on: float,
+    ) -> None:
+        self.name: Union[str, dict[str, str]] = name
+        self.mob: float = mob
+        self.mob_slope: float = mob_slope
+        self.v_th: float = v_th
+        self.v_on: Optional[float] = v_on
+        self.ss: Optional[float] = ss
+        self.i_off: float = i_off
+        self.i_on: float = i_on
+
+    def _get_onoff(self) -> float:
+        return self.i_on/self.i_off
+
+    def _get_record(self) -> pd.DataFrame:
+        data_list: list[Union[str, float, None]] = []
+        column_list: list[str] = []
+        if isinstance(self.name, str):
+            data_list = [self.name]
+            column_list = ["Name"]
+        elif isinstance(self.name, dict):
+            data_list = list(self.name.values())
+            column_list = list(self.name.keys())
+        data_list += [self.mob, self.v_th, self.v_on, self.ss, self.onoff]
+        column_list += ["Mobility", "VTh", "VOn", "S.S", "IOn/IOff"]
+        new_record = pd.DataFrame([data_list], columns=column_list)
+        return new_record
+
+    onoff = property(_get_onoff)
+    record = property(_get_record)
+
+
 def file_convert(filename: str, header_num: int=2, encoding: str="korean") -> list[pd.DataFrame]:
     data = pd.read_csv(filename, delimiter=",",
                        header=header_num, encoding=encoding)
@@ -207,7 +250,7 @@ def draw_transfer(
     if limit == 0 or limit == np.nan:
         limit = np.absolute(book.to_numpy()[:,1:]).max() * 8
     if low_lim == 0 or low_lim == np.nan:
-        low_lim = max(np.absolute(book.to_numpy()[:,1:]).min() / 4, 1E-13)
+        low_lim = max(np.absolute(book.to_numpy()[:,1:]).min() / 4, np.float32(1E-13))
     x: npt.NDArray = np.array([])
     axes.set_xlabel(r'$V_{\mathrm{GS}}$ / V', fontsize=label_font_s)
     axes.set_ylabel(r'$|I_{\mathrm{DS}}|$ / A', fontsize=label_font_s)
@@ -471,26 +514,6 @@ def mobility_calc(mob_slope: float, ci: float, w: float, l: float) -> float:
     mob_multip = 2 * l / w / (ci / 10000)
     return mob_slope ** 2 * mob_multip
 
-def create_record(
-    name: Union[str, dict[str, str]],
-    mob: float,
-    params: tuple[float, float, Optional[float], Optional[float], float, float]
-) -> pd.DataFrame:
-    _, v_th, v_turnon, ss, i_off, i_on = params
-    onoff = i_on / i_off
-    data_list: list[Union[str, float, None]] = []
-    column_list: list[str] = []
-    if isinstance(name, str):
-        data_list = [name]
-        column_list = ["Name"]
-    elif isinstance(name, dict):
-        data_list = list(name.values())
-        column_list = list(name.keys())
-    data_list += [mob, v_th, v_turnon, ss, onoff]
-    column_list += ["Mobility", "VTh", "VOn", "S.S", "IOn/IOff"]
-    new_record = pd.DataFrame([data_list], columns=column_list)
-    return new_record
-
 def evaluate(
     data_all: list[pd.DataFrame], namelist: list[str], path: str
 ) -> pd.DataFrame:
@@ -511,12 +534,13 @@ def evaluate(
             # evaluate parameters
             params = param_eval(book)
             mob = mobility_calc(params[0], ci, w, l)
-            new_record = create_record(name, mob, params)
+            results = FetResult(name, mob, *params)
+            new_record = results.record
             data_table = pd.concat([data_table, new_record], axis=0)
             # create figures
             pl.rc('font', size=10)
             fig = pl.figure(figsize=(7/2.54, 5/2.54), dpi=600)
-            axes = fig.add_axes([0,0,1,1])
+            axes = fig.add_axes([0, 0, 1, 1])
             axes.set_title(namelist[index], fontsize=16)
             axes2 = axes.twinx()
             draw_analyzed_graph(

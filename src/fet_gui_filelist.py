@@ -40,7 +40,7 @@ class FileListWindow(ttk.Frame):
         name: str,
         master: ttk.Notebook
     ) -> None:
-        ttk.Frame.__init__(self)
+        ttk.Frame.__init__(self, master=master)
 
         self.path: str = path
         self.name: str = name
@@ -48,35 +48,34 @@ class FileListWindow(ttk.Frame):
         self.namelist: dict[int, str] = {}
         self.all_data: dict[int, dict[int, pd.DataFrame]] = {}
         self.anal_param: dict[int, dict[int, dict[int, AnalParams]]] = {}
-        self.anal_res: dict[int, dict[int, dict[int, pd.Series]]] = {}
+        self.anal_res: dict[int, dict[int, dict[int, fet.FetResult]]] = {}
 
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
+        self.recently_generated: list[tuple[int, int, int]] = []
 
-        main_frame = ttk.Frame(self)
-        main_frame.grid(column=0, row=0, sticky="nswe")
-        main_frame.columnconfigure(0, weight=10)
-        main_frame.columnconfigure(1, weight=0)
-        main_frame.rowconfigure(0, weight=10)
-        for rownum in [1, 2, 3, 4, 5]:
-            main_frame.rowconfigure(rownum, weight=0)
+        self.columnconfigure(0, weight=10)
+        self.columnconfigure(1, weight=0)
+        self.rowconfigure(0, weight=10)
+        for rownum in [1, 2, 3, 4, 5, 6]:
+            self.rowconfigure(rownum, weight=0)
 
         self.filelist_view = ttk.Treeview(
-            main_frame,
+            self,
             selectmode="browse",
             columns=("name", "load")
         )
         self.filelist_view.heading("#0", text="Filename")
-        self.filelist_view.column("load", minwidth=20, width=30, stretch=tk.NO)
         self.filelist_view.heading("name", text="Name")
         self.filelist_view.heading("load", text="Load")
+        self.filelist_view.column("#0", minwidth=100, width=200)
+        self.filelist_view.column("name", minwidth=100, width=200)
+        self.filelist_view.column("load", minwidth=20, width=30, stretch=tk.NO)
         scrollbar = ttk.Scrollbar(
-            main_frame,
+            self,
             orient="vertical",
             command=self.filelist_view.yview
         )
         hscrollbar = ttk.Scrollbar(
-            main_frame,
+            self,
             orient="horizontal",
             command=self.filelist_view.xview
         )
@@ -86,16 +85,16 @@ class FileListWindow(ttk.Frame):
         scrollbar.grid(row=0, column=1, sticky="nsw")
         hscrollbar.grid(row=1, column=0, sticky="new")
         ttk.Button(
-            main_frame, text="Remove", command=self.delete_selected
+            self, text="Remove", command=self.delete_selected
         ).grid(row=2, column=0, columnspan=2, sticky="nsew")
         ttk.Button(
-            main_frame, text="Cache all", command=self.cache_all
+            self, text="Cache all", command=self.cache_all
         ).grid(row=3, column=0, columnspan=2, sticky="nsew")
         ttk.Button(
-            main_frame, text="Export cached data", command=self.export_cached
+            self, text="Export cached data", command=self.export_cached
         ).grid(row=4, column=0, columnspan=2, sticky="nsew")
         ttk.Button(
-            main_frame, text="Save cached graphs to png", command=self.export_graphs
+            self, text="Save cached graphs to png", command=self.export_graphs
         ).grid(row=5, column=0, columnspan=2, sticky="nsew")
 
         self.filelist += glob.glob(self.path + SEP + "*.csv")
@@ -128,7 +127,9 @@ class FileListWindow(ttk.Frame):
                 column_indeces = list(self.anal_res[file_index][sub_index].keys())
                 column_indeces.sort()
                 for column_index in column_indeces:
-                    result_list.append(self.anal_res[file_index][sub_index][column_index])
+                    result_list.append(
+                        self.anal_res[file_index][sub_index][column_index].record
+                    )
         if len(result_list) == 0:
             return
         result = pd.concat(result_list)
@@ -205,6 +206,7 @@ class FileListWindow(ttk.Frame):
         sel_num, subsel, colnum = self.get_selection_nums()
         if sel_num == -1:
             return
+        self.event_generate("<<NewAnalysisResults>>", when="tail")
         if subsel == -1:
             self.filelist_view.delete(f"{sel_num}")
             self.filelist[sel_num] = None
@@ -213,6 +215,7 @@ class FileListWindow(ttk.Frame):
             if sel_num in self.anal_param:
                 self.anal_param.pop(sel_num)
                 self.anal_res.pop(sel_num)
+                self.recently_generated.append((sel_num, subsel, colnum))
             return
         if colnum == -1:
             self.filelist_view.delete(f"{sel_num}-{subsel}")
@@ -220,12 +223,14 @@ class FileListWindow(ttk.Frame):
             if subsel in self.anal_param[sel_num]:
                 self.anal_param[sel_num].pop(subsel)
                 self.anal_res[sel_num].pop(subsel)
+                self.recently_generated.append((sel_num, subsel, colnum))
             return
         self.filelist_view.delete(f"{sel_num}-{subsel}-{colnum}")
         self.filelist_view.selection_add(f"{sel_num}-{subsel}")
-        if colnum in self.anal_param[sel_num][subsel]:
-            self.anal_param[sel_num][subsel].pop(colnum)
-            self.anal_res[sel_num][subsel].pop(colnum)
+        assert colnum in self.anal_param[sel_num][subsel]
+        self.anal_param[sel_num][subsel].pop(colnum)
+        self.anal_res[sel_num][subsel].pop(colnum)
+        self.recently_generated.append((sel_num, subsel, colnum))
         return
 
     def get_selection_nums(self) -> tuple[int, int, int]:
@@ -257,6 +262,7 @@ class FileListWindow(ttk.Frame):
         )
         mob = fet.mobility_calc(result[0], ci, w, l)
         self._save_analysis_results(index, subindex, col_ind, mob, result)
+        self.event_generate("<<NewAnalysisResults>>", when="tail")
 
     def cache_all(self) -> None:
         for index, filename in enumerate(self.filelist):
@@ -401,6 +407,7 @@ class FileListWindow(ttk.Frame):
     ) -> None:
         sel, subsel, col_ind = self.get_selection_nums()
         self._save_analysis_results(sel, subsel, col_ind, mob, result)
+        self.event_generate("<<NewAnalysisResults>>", when="tail")
 
     def _save_analysis_results(
         self,
@@ -415,13 +422,26 @@ class FileListWindow(ttk.Frame):
             desc["Sweep"] = f"{subindex}"
         if len(self.all_data[index][subindex].columns) > 2:
             desc["VDS"] = self.all_data[index][subindex].columns[col_ind].replace("VDS = ", "")
-        self.anal_res[index][subindex][col_ind] = fet.create_record(desc, mob, result)
+        self.anal_res[index][subindex][col_ind] = fet.FetResult(desc, mob, *result)
         self.filelist_view.item(
             f"{index}-{subindex}-{col_ind}",
             values=("","✓")
         )
+        self.recently_generated.append((index, subindex, col_ind))
 
     def save_analysis_params(self, parameters: AnalParams) -> None:
         sel, subsel, col = self.get_selection_nums()
         self.anal_param[sel][subsel][col] = parameters
+
+    def get_changed_result(self) -> Optional[tuple[Optional[fet.FetResult], int, int, int]]:
+        if len(self.recently_generated) == 0:
+            return None
+        file, sweep, col_num = self.recently_generated.pop(0)
+        if (
+            file not in self.anal_res or
+            sweep not in self.anal_res[file] or
+            col_num not in self.anal_res[file][sweep]
+        ):
+            return None, file, sweep, col_num
+        return self.anal_res[file][sweep][col_num], file, sweep, col_num
 

@@ -21,6 +21,7 @@ from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
 
 import fet_func as fet
 from fet_gui_filelist import AnalParams, FileListWindow
+from fet_gui_datatree import DataTree
 
 SEP = "/"
 # IMPORTANT CONSTANTS
@@ -51,28 +52,27 @@ class AppContainer(tk.Tk):
 
     def __init__(self) -> None:
         tk.Tk.__init__(self)
-        tk.Tk.columnconfigure(self, 0, weight=1)
+        tk.Tk.columnconfigure(self, 0, weight=0)
+        tk.Tk.columnconfigure(self, 1, weight=1)
         tk.Tk.rowconfigure(self, 0, weight=0)
-        tk.Tk.rowconfigure(self, 1, weight=10)
+        tk.Tk.rowconfigure(self, 1, weight=0)
+        tk.Tk.rowconfigure(self, 2, weight=10)
         self.title("FET Analysis")
 
         self.folders: dict[str, FileListWindow] = {}
 
         inputcontainer = ttk.Frame(self)
-        inputcontainer.grid(row=0, column=0, sticky="nsew")
+        inputcontainer.grid(row=0, column=0, columnspan=2, sticky="nsew")
         inputcontainer.columnconfigure(0, weight=1)
         inputcontainer.rowconfigure(0, weight=10)
         inputcontainer.rowconfigure(1, weight=0)
-        actioncontainer = ttk.Frame(self)
-        actioncontainer.grid(row=1, column=0, sticky="nsew")
-        actioncontainer.rowconfigure(0, weight=10)
-        actioncontainer.columnconfigure(0, weight=0)
-        actioncontainer.columnconfigure(1, weight=10)
-        graph_and_analyzers = ttk.Frame(actioncontainer)
-        graph_and_analyzers.grid(row=0, column=0, sticky="nsew")
+        graph_and_analyzers = ttk.Frame(self)
+        graph_and_analyzers.grid(row=1, column=0, sticky="nsew")
         graph_and_analyzers.columnconfigure(0, weight=1)
-        self.filelistplace = ttk.Notebook(actioncontainer)
-        self.filelistplace.grid(row=0, column=1, sticky="nsew")
+        self.filelistplace = ttk.Notebook(self)
+        self.filelistplace.grid(row=1, column=1, rowspan=2, sticky="nsew")
+        self.datalistplace = ttk.Notebook(self)
+        self.datalistplace.grid(row=2, column=0, sticky="nsew")
 
         self.folder_text = tk.StringVar()
         ttk.Entry(
@@ -93,12 +93,28 @@ class AppContainer(tk.Tk):
                 graph_and_analyzers, f"{text}:", index + 2
             )
         self.sliding: int = 0
-        self.bind("<<TreeviewSelect>>", self.file_selected)
-        self.bind("<<NotebookTabChanged>>", self.file_selected)
+
+        self.alldata_frame = DataTree(self.datalistplace)
+        self.datalistplace.add(self.alldata_frame, text="Data analysis results")
+        comp_graph_ctrl = ttk.Frame(self.datalistplace)
+        self.datalistplace.add(comp_graph_ctrl, text="Create summary graphs")
+
+        self.bind("<<TreeviewSelect>>", self.treeview_element_selected)
+        self.bind("<<NotebookTabChanged>>", self.notebook_tab_changed)
         self.bind("<Return>", self.enter_pressed)
+        self.bind("<<NewAnalysisResults>>", self.anal_results_updated)
 
     def enter_pressed(self, _: tk.Event) -> None:
         self.add_folder()
+
+    def notebook_tab_changed(self, event: tk.Event) -> None:
+        if event.widget == self.filelistplace:
+            self.file_selected()
+
+    def treeview_element_selected(self, event: tk.Event) -> None:
+        caller = event.widget
+        if caller in [frame.filelist_view for frame in self.folders.values()]:
+            self.file_selected()
 
     def add_folder(self) -> None:
         path = self.folder_text.get()
@@ -109,8 +125,9 @@ class AppContainer(tk.Tk):
         self.folders[name] = child
         self.filelistplace.add(child, text=name)
         self.filelistplace.select(len(self.folders)-1)
+        self.alldata_frame.add_folder(name)
 
-    def file_selected(self, _: tk.Event) -> None:
+    def file_selected(self) -> None:
         foldername = self.filelistplace.tab(self.filelistplace.select(), "text")
         filelist_view = self.folders[foldername]
         sel_num, subsel, plottingtype, datatype, book = filelist_view.get_selection()
@@ -132,12 +149,12 @@ class AppContainer(tk.Tk):
 
         if datatype == "out":
             # output curve
-            axes = self.graph.add_axes([0.3,0.25,0.65,0.55])
+            axes = self.graph.add_axes([0.3, 0.25, 0.65, 0.55])
             axes.set_title(name, fontsize=14)
             fet.draw_output(book, axes, label_font_s=10)
         elif datatype == "tr":
             # transfer curve
-            axes = self.graph.add_axes([0.25,0.25,0.52,0.55])
+            axes = self.graph.add_axes([0.25, 0.25, 0.52, 0.55])
             axes.set_title(name, fontsize=14)
             axes2 = axes.twinx()
             if plottingtype == -1:
@@ -153,6 +170,23 @@ class AppContainer(tk.Tk):
                     label_font_s=10
                 )
         self.canvas.draw()
+
+    def anal_results_updated(self, event: tk.Event) -> None:
+        caller = event.widget
+        assert isinstance(caller, FileListWindow)
+        if caller not in self.folders.values():
+            return
+        foldername: str = caller.name
+        result: Optional[fet.FetResult]
+        while True:
+            changed_value = caller.get_changed_result()
+            if changed_value is None:
+                break
+            (result, filenum, sweepnum, col_num) = changed_value
+            if result is None:
+                print(f"delete {filenum}, {sweepnum}, {col_num}")
+            else:
+                self.alldata_frame.add_data(result, foldername, filenum, sweepnum, col_num)
 
     def transfer_analysis(
         self,
