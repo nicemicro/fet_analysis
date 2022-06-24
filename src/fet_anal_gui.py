@@ -184,9 +184,13 @@ class AppContainer(tk.Tk):
                 break
             (result, filenum, sweepnum, col_num) = changed_value
             if result is None:
-                print(f"delete {filenum}, {sweepnum}, {col_num}")
+                self.alldata_frame.del_data(
+                    foldername, filenum, sweepnum, col_num
+                )
             else:
-                self.alldata_frame.add_data(result, foldername, filenum, sweepnum, col_num)
+                self.alldata_frame.add_data(
+                    result, foldername, filenum, sweepnum, col_num
+                )
 
     def transfer_analysis(
         self,

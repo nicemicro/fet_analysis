@@ -98,6 +98,31 @@ class DataTree(ttk.Frame):
         )
         self.alldata_view.see(f"{foldernum}-{filenum}-{sweepnum}-{col_num}")
 
+    def del_data(
+        self,
+        foldername: str,
+        filenum: int,
+        sweepnum: int,
+        col_num: int
+    ) -> None:
+        foldernum: int = self.folders.index(foldername)
+        if col_num != -1:
+            if (filenum, sweepnum, col_num) in self.data_list[foldernum]:
+                index = self.data_list[foldernum].index((filenum, sweepnum, col_num))
+                self.data_list[foldernum].pop(index)
+                self.alldata_view.delete(f"{foldernum}-{filenum}-{sweepnum}-{col_num}")
+                return
+        indexes_to_pop: list[int] = []
+        for index, identifiers in enumerate(self.data_list[foldernum]):
+            if identifiers[0] != filenum:
+                continue
+            if identifiers[1] != sweepnum and sweepnum != -1:
+                continue
+            indexes_to_pop = [index] + indexes_to_pop
+            self.alldata_view.delete(f"{foldernum}-{identifiers[0]}-{identifiers[1]}-{identifiers[2]}")
+        for to_pop in indexes_to_pop:
+            self.data_list[foldernum].pop(to_pop)
+
     def add_folder(self, foldername: str) -> None:
         self.alldata_view.insert(
             "",
