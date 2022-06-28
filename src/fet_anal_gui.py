@@ -22,6 +22,7 @@ from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
 import fet_func as fet
 from fet_gui_filelist import AnalParams, FileListWindow
 from fet_gui_datatree import DataTree
+from fet_gui_boxplot import BoxplotCtrl
 
 SEP = "/"
 # IMPORTANT CONSTANTS
@@ -96,13 +97,14 @@ class AppContainer(tk.Tk):
 
         self.alldata_frame = DataTree(self.datalistplace)
         self.datalistplace.add(self.alldata_frame, text="Data analysis results")
-        comp_graph_ctrl = ttk.Frame(self.datalistplace)
-        self.datalistplace.add(comp_graph_ctrl, text="Create summary graphs")
+        self.boxplot_ctrl = BoxplotCtrl(self.datalistplace)
+        self.datalistplace.add(self.boxplot_ctrl, text="Create summary graphs")
 
         self.bind("<<TreeviewSelect>>", self.treeview_element_selected)
         self.bind("<<NotebookTabChanged>>", self.notebook_tab_changed)
         self.bind("<Return>", self.enter_pressed)
         self.bind("<<NewAnalysisResults>>", self.anal_results_updated)
+        self.bind("<<DrawBoxplot>>", self.draw_boxplot)
 
     def enter_pressed(self, _: tk.Event) -> None:
         self.add_folder()
@@ -269,6 +271,9 @@ class AppContainer(tk.Tk):
         self.canvas.draw()
 
         self.sliding = 0
+
+    def draw_boxplot(self, _: tk.Event) -> None:
+        data_to_plot = self.boxplot_ctrl.graph_info()
 
 def main() -> None:
     app = AppContainer()

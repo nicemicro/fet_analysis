@@ -15,6 +15,41 @@ import re
 import matplotlib.pyplot as pl
 from scipy import signal
 from typing import Literal, Union, Optional
+from enum import Enum, IntEnum, auto
+
+
+class Parameters(Enum):
+    MOBILITY = auto()
+    MOB_SLOPE = auto()
+    VTH = auto()
+    VON = auto()
+    SS = auto()
+    IOFF = auto()
+    ION = auto()
+    ONOFF = auto()
+
+
+PARAMSHORT: dict[Parameters, str] = {
+    Parameters.MOBILITY: "mob",
+    Parameters.MOB_SLOPE: "sl",
+    Parameters.VTH: "vth",
+    Parameters.VON: "von",
+    Parameters.SS: "ss",
+    Parameters.IOFF: "ioff",
+    Parameters.ION: "ion",
+    Parameters.ONOFF: "onoff"
+}
+
+PARAMNAMES: dict[Parameters, str] = {
+    Parameters.MOBILITY: "Mobility",
+    Parameters.MOB_SLOPE: "Slope",
+    Parameters.VTH: "VTh",
+    Parameters.VON: "VOn",
+    Parameters.SS: "S.s",
+    Parameters.IOFF: "IOff",
+    Parameters.ION: "IOn",
+    Parameters.ONOFF: "IOn/IOff"
+}
 
 
 class FetResult:
@@ -30,16 +65,33 @@ class FetResult:
         i_on: float,
     ) -> None:
         self.name: Union[str, dict[str, str]] = name
-        self.mob: float = mob
-        self.mob_slope: float = mob_slope
-        self.v_th: float = v_th
-        self.v_on: Optional[float] = v_on
-        self.ss: Optional[float] = ss
-        self.i_off: float = i_off
-        self.i_on: float = i_on
+        self.params: dict[Parameters, Optional[float]] = {
+            Parameters.MOBILITY: mob,
+            Parameters.MOB_SLOPE: mob_slope,
+            Parameters.VTH: v_th,
+            Parameters.VON: v_on,
+            Parameters.SS: ss,
+            Parameters.IOFF: i_off,
+            Parameters.ION: i_on,
+            Parameters.ONOFF: i_on / i_off
+        }
 
-    def _get_onoff(self) -> float:
-        return self.i_on/self.i_off
+    def __getitem__(
+        self, name: Union[str, Parameters]
+    ) -> Union[str, dict[str, str], float, None]:
+        index: int
+        if isinstance(name, str):
+            if name == "Name":
+                return self.name
+            if name in PARAMNAMES:
+                index = list(PARAMNAMES.values()).index(name)
+                return self.params[list(PARAMNAMES.keys())[index]]
+            if name in PARAMSHORT:
+                index = list(PARAMSHORT.values()).index(name)
+                return self.params[list(PARAMSHORT.keys())[index]]
+        if isinstance(name, Parameters):
+            return self.params[name]
+        return None
 
     def _get_record(self) -> pd.DataFrame:
         data_list: list[Union[str, float, None]] = []
@@ -50,12 +102,18 @@ class FetResult:
         elif isinstance(self.name, dict):
             data_list = list(self.name.values())
             column_list = list(self.name.keys())
-        data_list += [self.mob, self.v_th, self.v_on, self.ss, self.onoff]
-        column_list += ["Mobility", "VTh", "VOn", "S.S", "IOn/IOff"]
+        params_to_list = [
+            Parameters.MOBILITY,
+            Parameters.VTH,
+            Parameters.VON,
+            Parameters.SS,
+            Parameters.ONOFF
+        ]
+        data_list += list(self.params[param] for param in params_to_list)
+        column_list += list(PARAMNAMES[param] for param in params_to_list)
         new_record = pd.DataFrame([data_list], columns=column_list)
         return new_record
 
-    onoff = property(_get_onoff)
     record = property(_get_record)
 
 

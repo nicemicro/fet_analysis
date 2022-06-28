@@ -33,20 +33,24 @@ class DataTree(ttk.Frame):
         self.folders: list[str] = []
         self.data_list: list[list[tuple[int, int, int]]] = []
 
-        colnames = ("mob", "von", "ss", "vth", "onoff")
+        self.params_to_list: list[fet.Parameters] = [
+            fet.Parameters.MOBILITY,
+            fet.Parameters.VON,
+            fet.Parameters.SS,
+            fet.Parameters.VTH,
+            fet.Parameters.ONOFF
+        ]
+        colnames = tuple(fet.PARAMSHORT[param] for param in self.params_to_list)
         self.alldata_view = ttk.Treeview(
             self,
             columns=colnames
         )
         self.alldata_view.heading("#0", text="Name")
-        self.alldata_view.heading("mob", text="Mobility")
-        self.alldata_view.heading("von", text="VOn")
-        self.alldata_view.heading("ss", text="Ss")
-        self.alldata_view.heading("vth", text="VTh")
-        self.alldata_view.heading("onoff", text="I(On/Off)")
+        for param in self.params_to_list:
+            self.alldata_view.heading(fet.PARAMSHORT[param], text=fet.PARAMNAMES[param])
         self.alldata_view.column("#0", minwidth=100, width=200)
-        for col_name in colnames:
-            self.alldata_view.column(col_name, minwidth=50, width=60)
+        for param in self.params_to_list:
+            self.alldata_view.column(fet.PARAMSHORT[param], minwidth=50, width=60)
         self.alldata_view.grid(column=0, row=0, sticky="nsew")
         scrollbar = ttk.Scrollbar(
             self,
@@ -84,7 +88,7 @@ class DataTree(ttk.Frame):
         if (filenum, sweepnum, col_num) in self.data_list[foldernum]:
             self.alldata_view.item(
                 f"{foldernum}-{filenum}-{sweepnum}-{col_num}",
-                values=(f"{res.mob}", f"{res.v_on}", f"{res.ss}", f"{res.v_th}", f"{res.onoff}")
+                values=tuple(str(res[param]) for param in self.params_to_list)
             )
             return
         self.data_list[foldernum].append((filenum, sweepnum, col_num))
@@ -94,7 +98,7 @@ class DataTree(ttk.Frame):
             index=self.data_list[foldernum].index((filenum, sweepnum, col_num)),
             iid=f"{foldernum}-{filenum}-{sweepnum}-{col_num}",
             text=visiblename,
-            values=(f"{res.mob}", f"{res.v_on}", f"{res.ss}", f"{res.v_th}", f"{res.onoff}")
+            values=tuple(str(res[param]) for param in self.params_to_list)
         )
         self.alldata_view.see(f"{foldernum}-{filenum}-{sweepnum}-{col_num}")
 
