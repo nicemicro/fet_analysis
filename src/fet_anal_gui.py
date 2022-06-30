@@ -15,6 +15,8 @@ from tkinter import ttk
 from typing import Optional, Literal
 
 import pandas as pd
+import numpy as np
+import numpy.typing as npt
 import matplotlib.pyplot as pl
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
                                                NavigationToolbar2Tk)
@@ -273,7 +275,34 @@ class AppContainer(tk.Tk):
         self.sliding = 0
 
     def draw_boxplot(self, _: tk.Event) -> None:
-        data_to_plot = self.boxplot_ctrl.graph_info()
+        data_to_plot: fet.Parameters = self.boxplot_ctrl.graph_info()
+        points: list[npt.ArrayLike] = []
+        dataset_names: list[str] = []
+        for group in self.folders:
+            column: Optional[npt.ArrayLike] = None
+            for result_index in self.folders[group].list_all_calculated():
+                result = self.folders[group].get_results(*result_index)
+                assert result is not None
+                result_point = result[data_to_plot]
+                if result_point is None:
+                    continue
+                assert isinstance(result_point, float)
+                if column is None:
+                    column = np.array([result_point])
+                    continue
+                column = np.append(column, result_point)
+            if column is not None:
+                points.append(column)
+                dataset_names.append(group)
+
+        for axes in self.graph.get_axes():
+            self.graph.delaxes(axes)
+        if len(points) == 0:
+            return
+        axes = self.graph.add_axes([0.25,0.25,0.52,0.55])
+        axes.set_title(fet.PARAMNAMES[data_to_plot], fontsize=14)
+        fet.draw_boxplot(points, axes, labels=dataset_names)
+        self.canvas.draw()
 
 def main() -> None:
     app = AppContainer()

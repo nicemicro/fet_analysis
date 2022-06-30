@@ -445,3 +445,20 @@ class FileListWindow(ttk.Frame):
             return None, file, sweep, col_num
         return self.anal_res[file][sweep][col_num], file, sweep, col_num
 
+    def list_all_calculated(self) -> list[tuple[int, int, int]]:
+        calculated: list[tuple[int, int, int]] = []
+        for filenum in self.anal_res:
+            for sweepnum in self.anal_res[filenum]:
+                for colnum in self.anal_res[filenum][sweepnum]:
+                    calculated.append((filenum, sweepnum, colnum))
+        return calculated
+
+    def get_results(self, filenum: int, sweep: int, colnum: int) -> Optional[fet.FetResult]:
+        if filenum not in self.anal_res:
+            return None
+        if sweep not in self.anal_res[filenum]:
+            return None
+        if colnum not in self.anal_res[filenum][sweep]:
+            return None
+        return self.anal_res[filenum][sweep][colnum]
+

@@ -324,6 +324,14 @@ def draw_transfer(
     axes.set_ylim(low_lim, limit)
     axes2.set_ylim(0, np.sqrt(limit / 5))
 
+def draw_boxplot(
+    data_list: list[npt.ArrayLike],
+    axes: pl.Axes,
+    labels: Optional[list[str]] = None,
+    label_font_s: int=14
+) -> None:
+    axes.boxplot(data_list, labels=labels)
+
 def data_type(book: pd.DataFrame) -> Literal["", "out", "tr"]:
     if book.columns[0] == "VDS":
         return "out"
