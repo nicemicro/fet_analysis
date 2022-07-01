@@ -275,13 +275,25 @@ class AppContainer(tk.Tk):
         self.sliding = 0
 
     def draw_boxplot(self, _: tk.Event) -> None:
-        data_to_plot: fet.Parameters = self.boxplot_ctrl.graph_info()
+        data_to_plot: fet.Parameters
+        to_file: bool
+        data_to_plot, to_file = self.boxplot_ctrl.graph_info()
         points: list[npt.ArrayLike] = []
         dataset_names: list[str] = []
-        for group in self.folders:
+        path: Optional[str] = None
+        for group, folder_data in self.folders.items():
+            if path is None:
+                path = folder_data.path
+            else:
+                newpath: str = ""
+                for folder1, folder2 in zip(path.split(SEP), folder_data.path.split(SEP)):
+                    if folder1 != folder2:
+                        break
+                    newpath = newpath + SEP + folder1
+                path = newpath
             column: Optional[npt.ArrayLike] = None
-            for result_index in self.folders[group].list_all_calculated():
-                result = self.folders[group].get_results(*result_index)
+            for result_index in folder_data.list_all_calculated():
+                result = folder_data.get_results(*result_index)
                 assert result is not None
                 result_point = result[data_to_plot]
                 if result_point is None:
@@ -299,10 +311,35 @@ class AppContainer(tk.Tk):
             self.graph.delaxes(axes)
         if len(points) == 0:
             return
+        assert path is not None
+        if to_file:
+            self.export_boxplot(
+                fet.PARAMNAMES[data_to_plot],
+                path,
+                points,
+                dataset_names
+            )
         axes = self.graph.add_axes([0.25,0.25,0.52,0.55])
         axes.set_title(fet.PARAMNAMES[data_to_plot], fontsize=14)
         fet.draw_boxplot(points, axes, labels=dataset_names)
         self.canvas.draw()
+
+    def export_boxplot(
+        self,
+        title: str,
+        path: str,
+        points: list[npt.ArrayLike],
+        dataset_names: list[str]
+    ) -> None:
+        fig = pl.figure(figsize=(7/2.54, 5/2.54), dpi=600)
+        axes = fig.add_axes([0,0,1,1])
+        axes.set_title(title, fontsize=16)
+        fet.draw_boxplot(points, axes, labels=dataset_names)
+        pl.savefig(
+            f"{path}{SEP}{title}.png",
+            bbox_inches = 'tight'
+        )
+        pl.close(fig)
 
 def main() -> None:
     app = AppContainer()
