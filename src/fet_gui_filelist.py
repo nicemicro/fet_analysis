@@ -18,15 +18,6 @@ import matplotlib.pyplot as pl
 
 import fet_func as fet
 
-SEP = "/"
-# IMPORTANT CONSTANTS
-#TODO: constants should be changed in the UI
-ci = 3.45E-4 # F/m^2 (areal capacitance) SiO2 100 nm
-#ci = 1.18E-3 # F/m^2 (areal capacitance) Al2O3 50 nm
-#ci = 5.78E-5 # pF/mm^2 crosslinked PVP solution processed
-w = 2000 # micrometers (channel length)
-l = 200 # micrometers (channel width)
-
 class AnalParams():
     def __init__(self, turn_on: int, fit_left: int, fit_right: int) -> None:
         self.turn_on: int = turn_on
@@ -38,12 +29,20 @@ class FileListWindow(ttk.Frame):
         self,
         path: str,
         name: str,
-        master: ttk.Notebook
+        master: ttk.Notebook,
+        ci: float,
+        w: float,
+        l: float,
+        sep: str = "/",
     ) -> None:
         ttk.Frame.__init__(self, master=master)
 
         self.path: str = path
+        self.sep: str = sep
         self.name: str = name
+        self.ci: float = ci
+        self.w: float = w
+        self.l: float = l
         self.filelist: list[Optional[str]] = []
         self.namelist: dict[int, str] = {}
         self.all_data: dict[int, dict[int, pd.DataFrame]] = {}
@@ -97,8 +96,8 @@ class FileListWindow(ttk.Frame):
             self, text="Save cached graphs to png", command=self.export_graphs
         ).grid(row=5, column=0, columnspan=2, sticky="nsew")
 
-        self.filelist += glob.glob(self.path + SEP + "*.csv")
-        self.filelist += glob.glob(self.path + SEP + "*.xls")
+        self.filelist += glob.glob(self.path + self.sep + "*.csv")
+        self.filelist += glob.glob(self.path + self.sep + "*.xls")
         self.filelist.sort()
 
         for itemnum in self.filelist_view.get_children():
@@ -134,7 +133,7 @@ class FileListWindow(ttk.Frame):
             return
         result = pd.concat(result_list)
         result = result.reset_index(drop=True)
-        result.to_csv(f"{self.path}{SEP}result.csv", index=False)
+        result.to_csv(f"{self.path}{self.sep}result.csv", index=False)
 
     def export_graphs(self) -> None:
         file_res_indeces = list(self.all_data.keys())
@@ -155,7 +154,7 @@ class FileListWindow(ttk.Frame):
                 # transfer curve
                 axes2 = axes.twinx()
                 fet.draw_transfer(pd.concat(data.values()), axes, axes2)
-            pl.savefig(f"{self.path}{SEP}{name}.png", bbox_inches = 'tight')
+            pl.savefig(f"{self.path}{self.sep}{name}.png", bbox_inches = 'tight')
             pl.close(fig)
             for sub_index in sub_indeces:
                 sub_data = data[sub_index]
@@ -165,7 +164,7 @@ class FileListWindow(ttk.Frame):
                     axes.set_title(name, fontsize=16)
                     fet.draw_output(sub_data, axes)
                     pl.savefig(
-                        f"{self.path}{SEP}{name}-sweep{sub_index+1}.png",
+                        f"{self.path}{self.sep}{name}-sweep{sub_index+1}.png",
                         bbox_inches = 'tight'
                     )
                     pl.close(fig)
@@ -183,7 +182,7 @@ class FileListWindow(ttk.Frame):
                         on_index=turn_on,
                         fitting_boundaries=(fit_left, fit_right)
                     )
-                    mob = fet.mobility_calc(result[0], ci, w, l)
+                    mob = fet.mobility_calc(result[0], self.ci, self.w, self.l)
                     fig = pl.figure(figsize=(7/2.54, 5/2.54), dpi=600)
                     axes = fig.add_axes([0,0,1,1])
                     axes2 = axes.twinx()
@@ -198,7 +197,7 @@ class FileListWindow(ttk.Frame):
                         label_font_s=14
                     )
                     pl.savefig(
-                        f"{self.path}{SEP}{name}-calc{col_ind}.png", bbox_inches = 'tight'
+                        f"{self.path}{self.sep}{name}-calc{col_ind}.png", bbox_inches = 'tight'
                     )
                     pl.close(fig)
 
@@ -260,7 +259,7 @@ class FileListWindow(ttk.Frame):
             on_index=turn_on,
             fitting_boundaries=(fit_left, fit_right)
         )
-        mob = fet.mobility_calc(result[0], ci, w, l)
+        mob = fet.mobility_calc(result[0], self.ci, self.w, self.l)
         self._save_analysis_results(index, subindex, col_ind, mob, result)
         self.event_generate("<<NewAnalysisResults>>", when="tail")
 

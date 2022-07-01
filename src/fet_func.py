@@ -7,15 +7,15 @@ Created on Thu Mar 11 12:14:09 2021
 Licenced under the GPL v3.0
 """
 
+import glob
+import re
+from typing import Literal, Union, Optional
+from enum import Enum, IntEnum, auto
 import pandas as pd
 import numpy as np
 import numpy.typing as npt
-import glob
-import re
 import matplotlib.pyplot as pl
 from scipy import signal
-from typing import Literal, Union, Optional
-from enum import Enum, IntEnum, auto
 
 
 class Parameters(Enum):
@@ -581,15 +581,14 @@ def mobility_calc(mob_slope: float, ci: float, w: float, l: float) -> float:
     return mob_slope ** 2 * mob_multip
 
 def evaluate(
-    data_all: list[pd.DataFrame], namelist: list[str], path: str
+    data_all: list[pd.DataFrame],
+    namelist: list[str],
+    path: str,
+    ci: float,
+    w: float,
+    l: float,
+    sep: str = "/",
 ) -> pd.DataFrame:
-    # IMPORTANT CONSTANTS
-    ci = 3.45E-4 # F/m^2 (areal capacitance) SiO2 100 nm
-    #ci = 1.18E-3 # F/m^2 (areal capacitance) Al2O3 50 nm
-    #ci = 5.78E-5 # pF/mm^2 crosslinked PVP solution processed
-    w = 2000 # micrometers (channel length)
-    l = 200 # micrometers (channel width)
-    # CHANGE THE CONSTANTS IF NEEDED
     data_table = pd.DataFrame(columns=["Name", "Mobility", "VTh", "VOn",
                                        "S.S", "IOn/IOff"])
     for index, name in enumerate(namelist):
@@ -612,7 +611,7 @@ def evaluate(
             draw_analyzed_graph(
                 book, axes, axes2, mob, params
             )
-            pl.savefig(path + SEP + namelist[index] + "_eval.png",
+            pl.savefig(path + sep + namelist[index] + "_eval.png",
                        bbox_inches = 'tight')
             pl.show()
     return data_table
@@ -621,7 +620,8 @@ def evaluate(
 def draw_graphs(
     data_all: list[pd.DataFrame],
     namelist: list[str],
-    path: str
+    path: str,
+    sep: str = "/"
 ) -> None:
     out_max_list: list[float] = []
     tr_max_list: list[float] = []
@@ -664,7 +664,7 @@ def draw_graphs(
             # transfer curve
             axes2 = axes.twinx()
             draw_transfer(book, axes, axes2, np.float32(trlimit), np.float32(trlowlim))
-        pl.savefig(path + SEP + name + ".png", bbox_inches = 'tight')
+        pl.savefig(path + sep + name + ".png", bbox_inches = 'tight')
         pl.show()
     return
 
@@ -681,7 +681,13 @@ def extract_data_from_file(filename: str) -> list[pd.DataFrame]:
         data = file_convert(filename)
     return data
 
-def process_directory(path: str) -> None:
+def process_directory(
+    path: str,
+    ci: float,
+    w: float,
+    l: float,
+    sep: str = "/"
+) -> None:
     """
     Goes through all csv files in the directory, converts the data files, and
     creates the graphs.
@@ -692,10 +698,10 @@ def process_directory(path: str) -> None:
         The path.
     """
     print(f"Processing directory {path}")
-    filelist = glob.glob(path + SEP + "*.csv") + glob.glob(path + SEP + "*.xls")
+    filelist = glob.glob(path + sep + "*.csv") + glob.glob(path + sep + "*.xls")
     newnamelist = []
     data_all = []
-    path_array = path.split(SEP)
+    path_array = path.split(sep)
     if len(path_array ) >= 1:
         dirname = path_array[-1] + " "
     else:
@@ -708,7 +714,7 @@ def process_directory(path: str) -> None:
         fn_end = ["", " rev"]
         for data in conv_data:
             data_all.append(data)
-            shortname = filename[filename.rfind(SEP)+1: ]
+            shortname = filename[filename.rfind(sep)+1: ]
             newname = shortname[:-4]
             if len(shortname) > 13 and filename.find("CH") > -1:
                 place = filename.find("CH")
@@ -723,10 +729,10 @@ def process_directory(path: str) -> None:
                 newname = shortname[0: shortname.rfind(".")] + fn_end[ind]
             newnamelist.append(newname)
             ind += 1
-            #data.to_csv(path + SEP + "c_" + newname + ".csv", index=False)
+            #data.to_csv(path + sep + "c_" + newname + ".csv", index=False)
     draw_graphs(data_all, newnamelist, path)
-    table = evaluate(data_all, newnamelist, path)
-    table.to_csv(path + SEP + "characteristics.csv", index=False)
+    table = evaluate(data_all, newnamelist, path, ci, w, l, sep)
+    table.to_csv(path + sep + "characteristics.csv", index=False)
 #%%
 def graph_debug(data: pd.DataFrame, name: str) -> None:
     pl.rc('font', size=10)
@@ -759,10 +765,16 @@ def load_data(filename: str) -> tuple[npt.NDArray, npt.NDArray]:
 trend: str = "tr.csv"
 outend: str = "out.csv"
 excelend: str = ".xls"
-SEP: str = "/"
 setvtgs: list[float] = [0, 10, 20, 30, 40, 50, 60]
 
 if __name__ == '__main__':
+    # IMPORTANT CONSTANTS
+    #ci = 1.18E-3 # F/m^2 (areal capacitance) Al2O3 50 nm
+    #ci = 5.78E-5 # pF/mm^2 crosslinked PVP solution processed
+    ci: float = 3.45E-4 # F/m^2 (areal capacitance) SiO2 100 nm
+    w: float = 2000. # micrometers (channel length)
+    l: float = 200. # micrometers (channel width)
+    # CHANGE THE CONSTANTS IF NEEDED
     print("")
     #for dirname in glob.glob("D:\\Gergely\\Documents\\CBNU files\\Data\\04. Oxide transistors\\04 gradient annealing of IGZO\\220516 grad\\*"):
     #    process_directory(dirname)

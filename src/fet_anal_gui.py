@@ -9,6 +9,7 @@ Licenced under the GPL v3.0
 """
 
 import glob
+import os
 import tkinter as tk
 from math import sqrt
 from tkinter import ttk
@@ -25,15 +26,6 @@ import fet_func as fet
 from fet_gui_filelist import AnalParams, FileListWindow
 from fet_gui_datatree import DataTree
 from fet_gui_boxplot import BoxplotCtrl
-
-SEP = "/"
-# IMPORTANT CONSTANTS
-#TODO: constants should be changed in the UI
-ci = 3.45E-4 # F/m^2 (areal capacitance) SiO2 100 nm
-#ci = 1.18E-3 # F/m^2 (areal capacitance) Al2O3 50 nm
-#ci = 5.78E-5 # pF/mm^2 crosslinked PVP solution processed
-w = 2000 # micrometers (channel length)
-l = 200 # micrometers (channel width)
 
 
 class AppContainer(tk.Tk):
@@ -63,12 +55,18 @@ class AppContainer(tk.Tk):
         self.title("FET Analysis")
 
         self.folders: dict[str, FileListWindow] = {}
+        self.sep = "/"
+        self.ci: float = 3.45E-4
+        self.l: float = 200
+        self.w: float = 2000
 
-        inputcontainer = ttk.Frame(self)
-        inputcontainer.grid(row=0, column=0, columnspan=2, sticky="nsew")
-        inputcontainer.columnconfigure(0, weight=1)
-        inputcontainer.rowconfigure(0, weight=10)
-        inputcontainer.rowconfigure(1, weight=0)
+        self.constantcontainer =ttk.Frame(self)
+        self.constantcontainer.columnconfigure(2, weight=1)
+        self.constantcontainer.columnconfigure(4, weight=1)
+        self.constantcontainer.columnconfigure(6, weight=1)
+        self.constantcontainer.grid(row=0, column=0, columnspan=2, sticky="nsew")
+        self.inputcontainer = ttk.Frame(self)
+        self.inputcontainer.columnconfigure(0, weight=1)
         graph_and_analyzers = ttk.Frame(self)
         graph_and_analyzers.grid(row=1, column=0, sticky="nsew")
         graph_and_analyzers.columnconfigure(0, weight=1)
@@ -78,12 +76,41 @@ class AppContainer(tk.Tk):
         self.datalistplace.grid(row=2, column=0, sticky="nsew")
 
         self.folder_text = tk.StringVar()
-        ttk.Entry(
-            inputcontainer, textvariable=self.folder_text, width=60
-        ).grid(row=0, column=0, sticky="nsew")
+        self._folder_entry = ttk.Entry(
+            self.inputcontainer, textvariable=self.folder_text, width=60
+        )
+        self._folder_entry.grid(row=0, column=0, sticky="nsew")
         ttk.Button(
-            inputcontainer, text="Open Folder", command=self.add_folder
+            self.inputcontainer, text="Open Folder", command=self.add_folder
         ).grid(row=0, column=1, sticky="nsew")
+
+        self.capacitance_text = tk.StringVar()
+        self.capacitance_text.set("3.45E-4")
+        self.width_text = tk.StringVar()
+        self.width_text.set("2000")
+        self.length_text = tk.StringVar()
+        self.length_text.set("200")
+        ttk.Label(
+            self.constantcontainer, text="Areal capacitance (pF/m^2):"
+        ).grid(row=0, column=0, sticky="nsew")
+        ttk.Entry(
+            self.constantcontainer, textvariable=self.capacitance_text
+        ).grid(row=0, column=2, sticky="nsew")
+        ttk.Label(
+            self.constantcontainer, text="Channel width (um):"
+        ).grid(row=0, column=3, sticky="nsew", padx=(15, 0))
+        ttk.Entry(
+            self.constantcontainer, textvariable=self.width_text
+        ).grid(row=0, column=4, sticky="nsew")
+        ttk.Label(
+            self.constantcontainer, text="Channel length (um):"
+        ).grid(row=0, column=5, sticky="nsew", padx=(15, 0))
+        ttk.Entry(
+            self.constantcontainer, textvariable=self.length_text
+        ).grid(row=0, column=6, sticky="nsew")
+        ttk.Button(
+            self.constantcontainer, text="Set", command=self.constants_set
+        ).grid(row=0, column=7, sticky="nsew")
 
         pl.rc('font', size=8)
         self.graph = pl.figure(figsize=(7/2.54, 5/2.54), dpi=180)
@@ -108,8 +135,28 @@ class AppContainer(tk.Tk):
         self.bind("<<NewAnalysisResults>>", self.anal_results_updated)
         self.bind("<<DrawBoxplot>>", self.draw_boxplot)
 
-    def enter_pressed(self, _: tk.Event) -> None:
-        self.add_folder()
+    def constants_set(self) -> None:
+        ci: str = self.capacitance_text.get()
+        w: str = self.width_text.get()
+        l: str = self.length_text.get()
+        try:
+            self.ci = float(ci)
+        except ValueError:
+            return
+        try:
+            self.w = float(w)
+        except ValueError:
+            return
+        try:
+            self.l = float(l)
+        except ValueError:
+            return
+        self.constantcontainer.grid_forget()
+        self.inputcontainer.grid(row=0, column=0, columnspan=2, sticky="nsew")
+
+    def enter_pressed(self, event: tk.Event) -> None:
+        if event.widget == self._folder_entry:
+            self.add_folder()
 
     def notebook_tab_changed(self, event: tk.Event) -> None:
         if event.widget == self.filelistplace:
@@ -122,10 +169,22 @@ class AppContainer(tk.Tk):
 
     def add_folder(self) -> None:
         path = self.folder_text.get()
-        name = path.split(SEP)[-1]
+        if not os.path.isdir(path):
+            return
+        if path[-1] == self.sep:
+            path = path[:-1]
+        name = path.split(self.sep)[-1]
         while name in self.folders:
             name += "+"
-        child = FileListWindow(path, name, self.filelistplace)
+        child = FileListWindow(
+            path,
+            name,
+            self.filelistplace,
+            self.ci,
+            self.w,
+            self.l,
+            self.sep
+        )
         self.folders[name] = child
         self.filelistplace.add(child, text=name)
         self.filelistplace.select(len(self.folders)-1)
@@ -222,7 +281,7 @@ class AppContainer(tk.Tk):
             on_index=turn_on,
             fitting_boundaries=(fit_left, fit_right)
         )
-        mob = fet.mobility_calc(result[0], ci, w, l)
+        mob = fet.mobility_calc(result[0], self.ci, self.w, self.l)
         filelist_view.save_selected_results(mob, result)
         fet.draw_analyzed_graph(
             data,
@@ -286,10 +345,13 @@ class AppContainer(tk.Tk):
                 path = folder_data.path
             else:
                 newpath: str = ""
-                for folder1, folder2 in zip(path.split(SEP), folder_data.path.split(SEP)):
+                for folder1, folder2 in zip(
+                    path.split(self.sep),
+                    folder_data.path.split(self.sep)
+                ):
                     if folder1 != folder2:
                         break
-                    newpath = newpath + SEP + folder1
+                    newpath = newpath + self.sep + folder1
                 path = newpath
             column: Optional[npt.ArrayLike] = None
             for result_index in folder_data.list_all_calculated():
@@ -336,7 +398,7 @@ class AppContainer(tk.Tk):
         axes.set_title(title, fontsize=16)
         fet.draw_boxplot(points, axes, labels=dataset_names)
         pl.savefig(
-            f"{path}{SEP}{title}.png",
+            f"{path}{self.sep}{title}.png",
             bbox_inches = 'tight'
         )
         pl.close(fig)
