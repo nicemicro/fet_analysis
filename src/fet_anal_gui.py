@@ -353,6 +353,8 @@ class AppContainer(tk.Tk):
                         break
                     newpath = newpath + self.sep + folder1
                 path = newpath
+                if folder_data.path[0] != self.sep:
+                    path = path[1:]
             column: Optional[npt.ArrayLike] = None
             for result_index in folder_data.list_all_calculated():
                 result = folder_data.get_results(*result_index)
@@ -397,6 +399,7 @@ class AppContainer(tk.Tk):
         axes = fig.add_axes([0,0,1,1])
         axes.set_title(title, fontsize=16)
         fet.draw_boxplot(points, axes, labels=dataset_names)
+        title = title.replace("/", "_")
         pl.savefig(
             f"{path}{self.sep}{title}.png",
             bbox_inches = 'tight'
