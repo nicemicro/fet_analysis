@@ -327,9 +327,12 @@ def draw_transfer(
 def draw_boxplot(
     data_list: list[npt.ArrayLike],
     axes: pl.Axes,
-    labels: Optional[list[str]] = None,
+    labels: list[str],
+    logscale: bool,
     label_font_s: int=14
 ) -> None:
+    if logscale:
+        axes.set_yscale("log")
     axes.boxplot(data_list, labels=labels)
 
 def data_type(book: pd.DataFrame) -> Literal["", "out", "tr"]:

@@ -43,25 +43,35 @@ class BoxplotCtrl(ttk.Frame):
             fet.PARAMNAMES[fet.Parameters.MOBILITY],
             *list(fet.PARAMNAMES[param] for param in self.params_to_list)
         ).grid(row=0, column=1)
+        self._logscale = tk.IntVar()
+        self._logscale.set(0)
+        ttk.Label(self, text="Logarithmic scale").grid(row=1, column=0)
+        ttk.Checkbutton(
+            self,
+            variable=self._logscale,
+            offvalue=0,
+            onvalue=1
+        ).grid(row=1, column=1, sticky="nsw")
         self._save_to_file = tk.IntVar()
         self._save_to_file.set(0)
-        ttk.Label(self, text="Export graph to file").grid(row=1, column=0)
+        ttk.Label(self, text="Export graph to file").grid(row=2, column=0)
         ttk.Checkbutton(
             self,
             variable=self._save_to_file,
             offvalue=0,
             onvalue=1
-        ).grid(row=1, column=1, sticky="nsw")
+        ).grid(row=2, column=1, sticky="nsw")
         ttk.Button(
             self,
             text="Create Graph",
             command=lambda: self.event_generate("<<DrawBoxplot>>", when="tail")
         ).grid(row=10, column=0, columnspan=2, sticky="se")
 
-    def graph_info(self) -> tuple[fet.Parameters, bool]:
+    def graph_info(self) -> tuple[fet.Parameters, bool, bool]:
         name = self._selected_param_name.get()
         index = list(fet.PARAMNAMES.values()).index(name)
         return (
             list(fet.PARAMNAMES.keys())[index],
-            self._save_to_file.get() == 1
+            self._logscale.get() == 1,
+            self._save_to_file.get() == 1,
         )

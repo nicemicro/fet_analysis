@@ -336,7 +336,7 @@ class AppContainer(tk.Tk):
     def draw_boxplot(self, _: tk.Event) -> None:
         data_to_plot: fet.Parameters
         to_file: bool
-        data_to_plot, to_file = self.boxplot_ctrl.graph_info()
+        data_to_plot, logscale, to_file = self.boxplot_ctrl.graph_info()
         points: list[npt.ArrayLike] = []
         dataset_names: list[str] = []
         path: Optional[str] = None
@@ -381,11 +381,12 @@ class AppContainer(tk.Tk):
                 fet.PARAMNAMES[data_to_plot],
                 path,
                 points,
-                dataset_names
+                dataset_names,
+                logscale
             )
         axes = self.graph.add_axes([0.25,0.25,0.52,0.55])
         axes.set_title(fet.PARAMNAMES[data_to_plot], fontsize=14)
-        fet.draw_boxplot(points, axes, labels=dataset_names)
+        fet.draw_boxplot(points, axes, dataset_names, logscale)
         self.canvas.draw()
 
     def export_boxplot(
@@ -393,12 +394,13 @@ class AppContainer(tk.Tk):
         title: str,
         path: str,
         points: list[npt.ArrayLike],
-        dataset_names: list[str]
+        dataset_names: list[str],
+        logscale: bool
     ) -> None:
         fig = pl.figure(figsize=(7/2.54, 5/2.54), dpi=600)
         axes = fig.add_axes([0,0,1,1])
         axes.set_title(title, fontsize=16)
-        fet.draw_boxplot(points, axes, labels=dataset_names)
+        fet.draw_boxplot(points, axes, dataset_names, logscale)
         title = title.replace("/", "_")
         pl.savefig(
             f"{path}{self.sep}{title}.png",
