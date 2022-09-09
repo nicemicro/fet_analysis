@@ -15,6 +15,8 @@ from typing import Optional, Literal
 
 import pandas as pd
 import matplotlib.pyplot as pl
+from xml.etree import ElementTree as ET
+from os.path import isfile
 
 import fet_func as fet
 
@@ -47,6 +49,8 @@ class FileListWindow(ttk.Frame):
         self.namelist: dict[int, str] = {}
         self.all_data: dict[int, dict[int, pd.DataFrame]] = {}
         self.anal_param: dict[int, dict[int, dict[int, AnalParams]]] = {}
+        self.xml_file: str = f"{self.path}{self.sep}.{self.name}.anal.xml"
+        self.param_xml: ET.Element
         self.anal_res: dict[int, dict[int, dict[int, fet.FetResult]]] = {}
 
         self.recently_generated: list[tuple[int, int, int]] = []
@@ -95,6 +99,12 @@ class FileListWindow(ttk.Frame):
         ttk.Button(
             self, text="Save cached graphs to png", command=self.export_graphs
         ).grid(row=5, column=0, columnspan=2, sticky="nsew")
+
+        if isfile(self.xml_file):
+            tree = ET.parse(self.xml_file)
+            self.param_xml = tree.getroot()
+        else:
+            self.param_xml = ET.Element("FET_analysis_params")
 
         self.filelist += glob.glob(self.path + self.sep + "*.csv")
         self.filelist += glob.glob(self.path + self.sep + "*.xls")
@@ -428,9 +438,44 @@ class FileListWindow(ttk.Frame):
         )
         self.recently_generated.append((index, subindex, col_ind))
 
+    def _get_xml_subelement(
+        self,
+        value: str,
+        attrib_name: str,
+        tag: str,
+        parent
+    ):
+        subelement = None
+        if (value not in
+            [element.attrib[attrib_name] for element in parent if element.tag==tag]
+        ):
+            subelement = ET.SubElement(
+                parent,
+                tag,
+                attrib={attrib_name: value}
+            )
+        else:
+            for element in parent:
+                if (
+                    element.tag==tag and
+                    element.attrib[attrib_name] == value
+                ):
+                    subelement = element
+                    break
+        return subelement
+
     def save_analysis_params(self, parameters: AnalParams) -> None:
         sel, subsel, col = self.get_selection_nums()
         self.anal_param[sel][subsel][col] = parameters
+        filename: str = self.filelist[sel][len(self.path)+1:]
+        file_repr = self._get_xml_subelement(filename, "fname", "Transfer", self.param_xml)
+        subsel_repr = self._get_xml_subelement(str(subsel), "num", "Subselection", file_repr)
+        col_repr = self._get_xml_subelement(str(col), "num", "Column", subsel_repr)
+        self._get_xml_subelement("y", "set", "TurnOn", col_repr).text = str(parameters.turn_on)
+        self._get_xml_subelement("y", "set", "FitLeft", col_repr).text = str(parameters.fit_left)
+        self._get_xml_subelement("y", "set", "FitRight", col_repr).text = str(parameters.fit_right)
+        tree = ET.ElementTree(self.param_xml)
+        tree.write(self.xml_file)
 
     def get_changed_result(self) -> Optional[tuple[Optional[fet.FetResult], int, int, int]]:
         if len(self.recently_generated) == 0:
