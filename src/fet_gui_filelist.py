@@ -100,15 +100,16 @@ class FileListWindow(ttk.Frame):
             self, text="Save cached graphs to png", command=self.export_graphs
         ).grid(row=5, column=0, columnspan=2, sticky="nsew")
 
-        if isfile(self.xml_file):
-            tree = ET.parse(self.xml_file)
-            self.param_xml = tree.getroot()
-        else:
-            self.param_xml = ET.Element("FET_analysis_params")
-
         self.filelist += glob.glob(self.path + self.sep + "*.csv")
         self.filelist += glob.glob(self.path + self.sep + "*.xls")
         self.filelist.sort()
+
+        if isfile(self.xml_file):
+            tree = ET.parse(self.xml_file)
+            self.param_xml = tree.getroot()
+            self._extract_parameter_from_xml()
+        else:
+            self.param_xml = ET.Element("FET_analysis_params")
 
         for itemnum in self.filelist_view.get_children():
             self.filelist_view.delete(itemnum)
@@ -124,6 +125,38 @@ class FileListWindow(ttk.Frame):
                 text=filename,
                 values=(self.namelist[index],"")
             )
+
+    def _extract_parameter_from_xml(self) -> None:
+        file_index: int
+        subsel_index: int
+        col_ind: int
+        turn_on: int
+        fit_left: int
+        fit_right: int
+        for file_repr in self.param_xml:
+            assert file_repr.tag == "Transfer", "The only expected tag here is 'Transfer'."
+            if not self.path + self.sep + file_repr.attrib["fname"] in self.filelist:
+                continue
+            file_index = self.filelist.index(self.path + self.sep + file_repr.attrib["fname"])
+            if file_index not in self.anal_param:
+                self.anal_param[file_index] = {}
+            for subsel_repr in file_repr:
+                assert subsel_repr.tag == "Subselection", "The only expected tag here is 'Subselection'."
+                subsel_index = int(str(subsel_repr.attrib["num"]))
+                if subsel_index not in self.anal_param[file_index]:
+                    self.anal_param[file_index][subsel_index] = {}
+                for col_repr in subsel_repr:
+                    assert col_repr.tag == "Column", "The only expected tag here is 'Column'."
+                    col_ind = int(str(col_repr.attrib["num"]))
+                    turn_on, fit_left, fit_right = -1, -1, -1
+                    for param_repr in col_repr:
+                        if param_repr.tag == "TurnOn" and param_repr.attrib["set"] == "y":
+                            turn_on = int(str(param_repr.text))
+                        if param_repr.tag == "FitLeft" and param_repr.attrib["set"] == "y":
+                            fit_left = int(str(param_repr.text))
+                        if param_repr.tag == "FitRight" and param_repr.attrib["set"] == "y":
+                            fit_right = int(str(param_repr.text))
+                    self.anal_param[file_index][subsel_index][col_ind] = AnalParams(turn_on, fit_left, fit_right)
 
     def export_cached(self) -> None:
         result_list: list[pd.DataFrame] = []
@@ -431,6 +464,10 @@ class FileListWindow(ttk.Frame):
             desc["Sweep"] = f"{subindex}"
         if len(self.all_data[index][subindex].columns) > 2:
             desc["VDS"] = self.all_data[index][subindex].columns[col_ind].replace("VDS = ", "")
+        if index not in self.anal_res:
+            self.anal_res[index] = {}
+        if subindex not in self.anal_res[index]:
+            self.anal_res[index][subindex] = {}
         self.anal_res[index][subindex][col_ind] = fet.FetResult(desc, mob, *result)
         self.filelist_view.item(
             f"{index}-{subindex}-{col_ind}",
@@ -443,9 +480,9 @@ class FileListWindow(ttk.Frame):
         value: str,
         attrib_name: str,
         tag: str,
-        parent
-    ):
-        subelement = None
+        parent: ET.Element
+    ) -> ET.Element:
+        subelement: Optional[ET.Element] = None
         if (value not in
             [element.attrib[attrib_name] for element in parent if element.tag==tag]
         ):
@@ -462,11 +499,13 @@ class FileListWindow(ttk.Frame):
                 ):
                     subelement = element
                     break
+        assert subelement is not None
         return subelement
 
     def save_analysis_params(self, parameters: AnalParams) -> None:
         sel, subsel, col = self.get_selection_nums()
         self.anal_param[sel][subsel][col] = parameters
+        assert isinstance(self.filelist[sel], str), "Tries to save params for removed file"
         filename: str = self.filelist[sel][len(self.path)+1:]
         file_repr = self._get_xml_subelement(filename, "fname", "Transfer", self.param_xml)
         subsel_repr = self._get_xml_subelement(str(subsel), "num", "Subselection", file_repr)
