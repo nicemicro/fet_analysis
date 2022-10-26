@@ -27,22 +27,37 @@ from fet_gui_filelist import AnalParams, FileListWindow
 from fet_gui_datatree import DataTree
 from fet_gui_boxplot import BoxplotCtrl
 
+SCALE_DETAIL = 1000
 
 class AppContainer(tk.Tk):
     """The main window of the App"""
 
     def make_slider(self, master: ttk.Frame, text: str, rownum: int) -> ttk.Scale:
-        ttk.Label(master, text=text).grid(row=rownum, column=0, sticky="nse")
+        container = ttk.Frame(master)
+        container.grid(row=rownum, column=0, columnspan=2, sticky="nswe")
+        ttk.Button(
+            container,
+            text="-",
+            width=2,
+            command=lambda: self.move_slider(text, -1)
+        ).grid(row=0, column=0, sticky="nswe")
+        ttk.Button(
+            container,
+            text="+",
+            width=2,
+            command=lambda: self.move_slider(text, 1)
+        ).grid(row=0, column=1, sticky="nswe")
+        ttk.Label(container, text=f"{text}: ", width=9).grid(row=0, column=2, sticky="nse")
         new_scale = ttk.Scale(
-            master,
+            container,
             orient="horizontal",
-            length=300,
+            length=400,
             from_=0,
-            to=100,
+            to=SCALE_DETAIL,
             state="disabled",
             command=lambda x: self.set_slider(text, x)
         )
-        new_scale.grid(row=rownum, column=1, sticky="nswe")
+        new_scale.grid(row=0, column=3, sticky="nswe")
         return new_scale
 
     def __init__(self) -> None:
@@ -120,7 +135,7 @@ class AppContainer(tk.Tk):
         self.sliders: dict[str, ttk.Scale] = {}
         for index, text in enumerate(["Turn-ON", "Fit from", "Fit to"]):
             self.sliders[text] = self.make_slider(
-                graph_and_analyzers, f"{text}:", index + 2
+                graph_and_analyzers, text, index + 2
             )
         self.sliding: int = 0
 
@@ -273,9 +288,9 @@ class AppContainer(tk.Tk):
         data: pd.DataFrame = table[[table.columns[0], table.columns[col_ind]]]
         turn_on, fit_left, fit_right = filelist_view.analyze_selected_transfer()
         self.sliding = -3
-        self.sliders["Turn-ON"].set(turn_on / len(data) * 100)
-        self.sliders["Fit from"].set(fit_left / len(data) * 100)
-        self.sliders["Fit to"].set(fit_right / len(data) * 100)
+        self.sliders["Turn-ON"].set(turn_on / len(data) * SCALE_DETAIL)
+        self.sliders["Fit from"].set(fit_left / len(data) * SCALE_DETAIL)
+        self.sliders["Fit to"].set(fit_right / len(data) * SCALE_DETAIL)
         result = fet.param_eval(
             data,
             on_index=turn_on,
@@ -313,14 +328,21 @@ class AppContainer(tk.Tk):
             self.after(100, self.read_slider_pos)
         self.sliding += 1
 
+    def move_slider(self, name: str, move_by: int) -> None:
+        current_pos: int = self.sliders[name].get()
+        self.sliders[name].set(current_pos + move_by)
+        if self.sliding == 0:
+            self.after(100, self.read_slider_pos)
+        self.sliding += 1
+
     def read_slider_pos(self) -> None:
         foldername = self.filelistplace.tab(self.filelistplace.select(), "text")
         filelist_view = self.folders[foldername]
         sel, sub_sel, col, _, table = filelist_view.get_selection()
         name = filelist_view.get_selected_name()
-        turn_on = int(round(self.sliders["Turn-ON"].get() * len(table) / 100))
-        fit_left = int(round(self.sliders["Fit from"].get() * len(table) / 100))
-        fit_right = int(round(self.sliders["Fit to"].get() * len(table) / 100))
+        turn_on = int(round(self.sliders["Turn-ON"].get() * len(table) / SCALE_DETAIL))
+        fit_left = int(round(self.sliders["Fit from"].get() * len(table) / SCALE_DETAIL))
+        fit_right = int(round(self.sliders["Fit to"].get() * len(table) / SCALE_DETAIL))
         filelist_view.save_analysis_params(AnalParams(turn_on, fit_left, fit_right))
 
         for axes in self.graph.get_axes():

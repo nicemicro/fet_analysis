@@ -9,6 +9,7 @@ Licenced under the GPL v3.0
 
 import glob
 import re
+from os import devnull
 from typing import Literal, Union, Optional
 from enum import Enum, IntEnum, auto
 import pandas as pd
@@ -16,6 +17,7 @@ import numpy as np
 import numpy.typing as npt
 import matplotlib.pyplot as pl
 from scipy import signal
+import xlrd
 
 
 class Parameters(Enum):
@@ -177,7 +179,8 @@ def file_convert(filename: str, header_num: int=2, encoding: str="korean") -> li
                                     header["VGS"]: "VGS"})]
 
 def read_excel(filename: str) -> list[pd.DataFrame]:
-    raw_data = pd.read_excel(filename)
+    wb = xlrd.open_workbook(filename, logfile=open(devnull, 'w'))
+    raw_data = pd.read_excel(wb)
     blocks = {}
     data = pd.DataFrame([])
     pattern = re.compile(r"(?P<name>GateV|DrainV|DrainI)[(]?(?P<tag>[0-9]*)[)]?")
@@ -750,8 +753,8 @@ def graph_debug(data: pd.DataFrame, name: str) -> None:
                                prominence=(y_slope[2:-2].max()-y_slope[2:-2].min())/5)
     y_slsl_p = signal.find_peaks(y_slslope[4:-4],
                                  prominence=(y_slslope[4:-4].max()-y_slslope[4:-4].min())/10)
-    axes.plot(x, data[["log(y)"]], "b-", ms=3)
-    axes.plot(x, data[["avg(log(y))"]], "r-", ms=3)
+    axes.plot(x, data[["log(y)"]].to_numpy()[:,0], "b-", ms=3)
+    axes.plot(x, data[["avg(log(y))"]].to_numpy()[:,0], "r-", ms=3)
     axes2.plot(x, y_slope, "k-", ms=3)
     axes2.plot(x, y_slslope, "g-", ms=3)
     axes2.plot(x[y_sl_p[0]+2], y_slope[y_sl_p[0]+2], "bo", ms=3)
